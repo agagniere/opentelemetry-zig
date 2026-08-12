@@ -1,5 +1,6 @@
 .zig-cache
 zig-out
 zig-pkg
+opentelemetry-semconv/semantic-conventions/
 ## docs artifacts
 TRACE_API_COMPLETENESS.md

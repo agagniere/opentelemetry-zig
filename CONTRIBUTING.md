@@ -146,6 +146,23 @@ zig build sdk-docs
 
 Documentation will be generated in `zig-out/docs/` and can be viewed by opening `index.html` in a browser.
 
+### Semantic conventions
+
+The `opentelemetry-semconv` module is generated from the OpenTelemetry
+semantic conventions specification, so most of its sources must not be edited
+by hand. See
+[opentelemetry-semconv/README.md](./opentelemetry-semconv/README.md) for what
+is generated and how to regenerate it.
+
+```
+# Run the semantic conventions tests and examples
+zig build semconv-test
+zig build semconv-examples
+
+# Generate docs into zig-out/docs/semconv/
+zig build semconv-docs
+```
+
 ## Development Workflow
 
 A typical development workflow:

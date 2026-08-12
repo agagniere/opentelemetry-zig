@@ -35,6 +35,8 @@ jobs:
       - run: zig build --fetch
       - run: zig build sdk-test -Dtest-verbose=true
         timeout-minutes: 3
+      - run: zig build semconv-test
+        timeout-minutes: 3
 
   build_examples:
     runs-on: ubuntu-latest
@@ -46,6 +48,7 @@ jobs:
           mirror: 'https://zigmirror.com'
       - run: zig build --fetch
       - run: zig build sdk-examples
+      - run: zig build semconv-examples
 
   # Execute bencharmks only if the PR has a specific label 'run::benchmarks'
   benchmarks:

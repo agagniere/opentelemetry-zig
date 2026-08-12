@@ -39,6 +39,7 @@
         "build.zig.zon",
         "build",
         "opentelemetry-proto",
+        "opentelemetry-semconv",
         "opentelemetry-sdk",
         "LICENSE",
         "README.md",

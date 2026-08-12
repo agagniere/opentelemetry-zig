@@ -1,0 +1,86 @@
+// DO NOT EDIT, this is an auto-generated file
+//
+// If you want to update the file:
+// - Edit the template at scripts/templates/registry/zig/resource.zig.j2
+// - Run the script at scripts/generate-consts-from-spec.sh
+
+//! # Semantic Resource Attributes
+//!
+//! The entire set of semantic resource attributes (or [conventions](https://opentelemetry.io/docs/concepts/semantic-conventions/)) defined by the project.
+
+const std = @import("std");
+const types = @import("types.zig");
+
+{% for attr in ctx %}
+{# Escape any `<...>` tags to `[...]` to avoid documentation parsing issues. #}
+{% set safe_note = attr.note | replace('<', '[') | replace('>', ']') %}
+/// {{ attr.brief }}
+{% if safe_note %}
+/// 
+/// ## Notes
+/// 
+/// {{ safe_note }}
+{% endif %}
+{% if attr.examples %}
+/// 
+/// # Examples
+/// 
+{% if attr.examples is sequence %}
+    {% for example in attr.examples %}
+/// - {{ example | replace('\n', '\\n') | replace('"', '\\"') }}
+    {% endfor %}
+{% else %}
+/// - {{ attr.examples | replace('\n', '\\n') | replace('"', '\\"') }}
+{% endif %}
+{% endif %}
+{% if attr is experimental %}
+/// Note: This attribute is experimental and may change in the future.
+{% endif %}
+{% if attr is deprecated %}
+/// Note: This attribute is deprecated. {{ attr.deprecated }}
+{% endif %}
+{# Generate simple attribute #}
+{% set attr_name = attr.name | replace('.', '_') | replace('-', '_') | snake_case %}
+{% if attr.type == 'string' %}
+pub const {{ attr_name }} = types.StringAttribute{
+    .name = "{{ attr.name }}",
+    .brief = "{{ attr.brief | replace('\\', '\\\\') | replace('"', '\\"') | replace('\n', ' ') | trim }}",
+    .stability = {{ '.stable' if attr.stability == 'stable' else '.development' if attr.stability == 'development' else '.experimental' if attr.stability == 'experimental' else '.deprecated' if attr.deprecated else '.development' }},
+    .requirement_level = {{ '.required' if attr.requirement_level == 'required' else '.recommended' if attr.requirement_level == 'recommended' else '.opt_in' if attr.requirement_level == 'opt_in' else '.conditionally_required' if attr.requirement_level == 'conditionally_required' else '.opt_in' }},
+};
+{% elif attr.type == 'int' %}
+pub const {{ attr_name }} = types.IntAttribute{
+    .name = "{{ attr.name }}",
+    .brief = "{{ attr.brief | replace('\\', '\\\\') | replace('"', '\\"') | replace('\n', ' ') | trim }}",
+    .stability = {{ '.stable' if attr.stability == 'stable' else '.development' if attr.stability == 'development' else '.experimental' if attr.stability == 'experimental' else '.deprecated' if attr.deprecated else '.development' }},
+    .requirement_level = {{ '.required' if attr.requirement_level == 'required' else '.recommended' if attr.requirement_level == 'recommended' else '.opt_in' if attr.requirement_level == 'opt_in' else '.conditionally_required' if attr.requirement_level == 'conditionally_required' else '.opt_in' }},
+};
+{% elif attr.type == 'double' %}
+pub const {{ attr_name }} = types.DoubleAttribute{
+    .name = "{{ attr.name }}",
+    .brief = "{{ attr.brief | replace('\\', '\\\\') | replace('"', '\\"') | replace('\n', ' ') | trim }}",
+    .stability = {{ '.stable' if attr.stability == 'stable' else '.development' if attr.stability == 'development' else '.experimental' if attr.stability == 'experimental' else '.deprecated' if attr.deprecated else '.development' }},
+    .requirement_level = {{ '.required' if attr.requirement_level == 'required' else '.recommended' if attr.requirement_level == 'recommended' else '.opt_in' if attr.requirement_level == 'opt_in' else '.conditionally_required' if attr.requirement_level == 'conditionally_required' else '.opt_in' }},
+};
+{% elif attr.type == 'boolean' %}
+pub const {{ attr_name }} = types.BooleanAttribute{
+    .name = "{{ attr.name }}",
+    .brief = "{{ attr.brief | replace('\\', '\\\\') | replace('"', '\\"') | replace('\n', ' ') | trim }}",
+    .stability = {{ '.stable' if attr.stability == 'stable' else '.development' if attr.stability == 'development' else '.experimental' if attr.stability == 'experimental' else '.deprecated' if attr.deprecated else '.development' }},
+    .requirement_level = {{ '.required' if attr.requirement_level == 'required' else '.recommended' if attr.requirement_level == 'recommended' else '.opt_in' if attr.requirement_level == 'opt_in' else '.conditionally_required' if attr.requirement_level == 'conditionally_required' else '.opt_in' }},
+};
+{% else %}
+{# Fallback to StringAttribute #}
+pub const {{ attr_name }} = types.StringAttribute{
+    .name = "{{ attr.name }}",
+    .brief = "{{ attr.brief | replace('\\', '\\\\') | replace('"', '\\"') | replace('\n', ' ') | trim }}",
+    .stability = {{ '.stable' if attr.stability == 'stable' else '.development' if attr.stability == 'development' else '.experimental' if attr.stability == 'experimental' else '.deprecated' if attr.deprecated else '.development' }},
+    .requirement_level = {{ '.required' if attr.requirement_level == 'required' else '.recommended' if attr.requirement_level == 'recommended' else '.opt_in' if attr.requirement_level == 'opt_in' else '.conditionally_required' if attr.requirement_level == 'conditionally_required' else '.opt_in' }},
+};
+{% endif %}
+
+{% endfor %}
+
+test "semantic resource attributes" {
+    @import("std").testing.refAllDecls(@This());
+}

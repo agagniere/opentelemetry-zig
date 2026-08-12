@@ -1,0 +1,88 @@
+# Whitespace control settings to simplify the definition of templates
+whitespace_control:
+  trim_blocks: true
+  lstrip_blocks: true
+
+# Configuration for the comment formatting
+comment_formats:
+  zig:
+    format: markdown
+    prefix: "/// "
+    trim: true
+    remove_trailing_dots: true
+    escape_square_brackets: true
+default_comment_format: zig
+
+params:
+  schema_url: "https://opentelemetry.io/schemas/1.36.0"
+  exclude_root_namespace: []
+  excluded_attributes: ["messaging.client_id"]
+
+templates:
+  - pattern: lib.zig.j2
+    filter: .
+    application_mode: single
+    file_name: lib.zig
+  - pattern: attribute.zig.j2
+    filter: semconv_grouped_attributes($params)
+    application_mode: single
+    file_name: attribute.zig
+  - pattern: metric.zig.j2
+    filter: semconv_grouped_metrics($params)
+    application_mode: single
+    file_name: metric.zig
+  - pattern: resource.zig.j2
+    filter: >
+      semconv_signal("resource"; $params) 
+      | map(.attributes[])
+      | unique_by(.name)
+      | sort_by(.name)
+      | map({name, brief, examples, deprecated, requirement_level, stability, type})
+    application_mode: single
+    file_name: resource.zig
+  - pattern: trace.zig.j2
+    filter: >
+      semconv_signal("span"; $params) + semconv_signal("event"; $params)
+      | map(.attributes[])
+      | unique_by(.name)
+      | sort_by(.name)
+      | map({name, brief, examples, deprecated, requirement_level, stability, type})
+    application_mode: single
+    file_name: trace.zig
+
+acronyms:
+  - AI
+  - AWS
+  - CICD
+  - CloudEvents
+  - CloudFoundry
+  - CLR
+  - CPython
+  - CPU
+  - CSI
+  - DB
+  - DNS
+  - DynamoDB
+  - ECS
+  - EKS
+  - GCE
+  - GCP
+  - GraphQL
+  - HTTP
+  - iOS
+  - JVM
+  - NodeJS
+  - OCI
+  - OpenTracing
+  - OracleDB
+  - OS
+  - OTel
+  - RabbitMQ
+  - RocketMQ
+  - RPC
+  - S3
+  - SignalR
+  - TLS
+  - URL
+  - VCS
+  - zOS

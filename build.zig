@@ -3,6 +3,7 @@ const zon = @import("build.zig.zon");
 
 const helpers = @import("build/helpers.zig");
 const proto_build = @import("build/proto/build.zig");
+const semconv_build = @import("build/semconv/build.zig");
 const sdk_build = @import("build/sdk/build.zig");
 
 pub fn build(b: *std.Build) !void {
@@ -28,7 +29,8 @@ pub fn build(b: *std.Build) !void {
         .version = zon.version,
     };
 
-    // proto exposes the "opentelemetry-proto" module the SDK imports so it needs to be built first.
+    // proto and semconv expose modules the SDK can import so they need to be built first.
     try proto_build.Setup(b, compilation_info, &build_mods);
+    try semconv_build.Setup(b, compilation_info, &build_mods);
     try sdk_build.Setup(b, compilation_info, &build_mods);
 }

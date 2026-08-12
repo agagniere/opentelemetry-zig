@@ -1,0 +1,87 @@
+// DO NOT EDIT, this is an auto-generated file
+//
+// If you want to update the file:
+// - Edit the template at scripts/templates/registry/zig/metric.zig.j2
+// - Run the script at scripts/generate-consts-from-spec.sh
+
+//! # Semantic Metrics
+//!
+//! The entire set of semantic metrics (or [conventions](https://opentelemetry.io/docs/concepts/semantic-conventions/)) defined by the project.
+
+const std = @import("std");
+const types = @import("types.zig");
+
+{% for root_ns in ctx %}
+    {% for metric in root_ns.metrics %}
+{# Escape any `<...>` tags to `[...]` to avoid documentation parsing issues. #}
+{% set safe_note = metric.note | replace('<', '[') | replace('>', ']') %}
+{% if metric.brief and metric.brief is string %}
+{% set brief_lines = metric.brief | split('\n') %}
+{% for line in brief_lines %}
+/// {{ line | trim }}
+{% endfor %}
+{% else %}
+/// {{ metric.brief | default('') }}
+{% endif %}
+{% if safe_note %}
+///
+/// Notes: {{ safe_note | replace('\n', ' ') | replace('  ', ' ') | trim }}
+{% endif %}
+///
+/// ## Metadata
+/// | Instrument | Unit | Status |
+/// |:-|:-|:-|
+/// | `{{ metric.instrument }}` | `{{ metric.unit }}` | `{{ metric.stability | capitalize }}` |
+{% if metric.attributes %}
+///
+/// ## Attributes
+/// | Name | Requirement |
+/// |:-|:- |
+    {% for attribute in metric.attributes | rejectattr("name", "in", params.excluded_attributes) | sort(attribute="name") %}
+        {% if attribute.requirement_level %}
+            {% if attribute.requirement_level.conditionally_required %}
+                {% set req_level = "Conditionally_required" %}
+                {% set req_message = attribute.requirement_level.conditionally_required %}
+            {% else %}
+                {% set req_level = (attribute.requirement_level | capitalize) %}
+                {% set req_message = attribute.requirement_level_msg %}
+            {% endif %}
+        {% else %}
+            {% set req_level = "Unspecified" %}
+            {% set req_message = '' %}
+        {% endif %}
+/// | `{{ attribute.name }}` | `{{ req_level }}`{{ (': ' + req_message.replace('\n', ' ') if req_message else '') }} |
+    {% endfor %}
+{% endif %}
+{% if metric.examples %}
+///
+/// ## Examples
+    {% for example in metric.examples %}
+/// - {{ example | replace('\n', '\\n') | replace('"', '\\"') }}
+    {% endfor %}
+{% endif %}
+{% if metric.stability == 'experimental' or metric.requirement_level == 'opt_in' %}
+///
+/// Note: This metric is experimental and may change in the future.
+{% endif %}
+{% if metric.deprecated %}
+///
+/// Note: This metric is deprecated. {{ metric.deprecated.note | default(metric.deprecated) }}
+{% endif %}
+pub const {{ metric.metric_name | snake_case }} = types.Metric{
+    .name = "{{ metric.metric_name }}",
+    .brief = "{{ metric.brief | replace('\\', '\\\\') | replace('"', '\\"') | replace('\n', ' ') | trim }}",
+    .stability = {{ '.stable' if metric.stability == 'stable' else '.development' if metric.stability == 'development' else '.experimental' if metric.stability == 'experimental' else '.deprecated' if metric.deprecated else '.development' }},
+    .instrument = {{ '.counter' if metric.instrument == 'counter' else '.gauge' if metric.instrument == 'gauge' else '.updowncounter' if metric.instrument == 'updowncounter' else '.histogram' if metric.instrument == 'histogram' else '.gauge' }},
+    .unit = "{{ metric.unit | default('') }}",
+    .value_type = {{ '.int' if metric.value_type == 'int' else '.double' }},
+{% if metric.deprecated %}    .deprecated_reason = "{{ metric.deprecated.note | default(metric.deprecated) | replace('"', '\\"') }}",
+{% endif %}
+};
+
+    {% endfor %}
+{% endfor %}
+
+test "semantic metrics" {
+    @import("std").testing.refAllDecls(@This());
+}

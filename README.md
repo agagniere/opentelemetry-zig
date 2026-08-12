@@ -36,6 +36,7 @@ top-level directory with its own README:
 
 - **[opentelemetry-sdk](./opentelemetry-sdk/README.md)** - the OpenTelemetry API and SDK: traces, metrics, logs, baggage, OTLP exporters, and C bindings. Start here for installation, features, and usage.
 - **[opentelemetry-proto](./opentelemetry-proto/README.md)** - Zig protobuf bindings for the OpenTelemetry (OTLP) data model, generated from the official `.proto` definitions.
+- **[opentelemetry-semconv](./opentelemetry-semconv/README.md)** - strongly-typed Zig definitions of the OpenTelemetry semantic conventions, generated from the official specification.
 
 ## Contributing
 
