@@ -263,6 +263,8 @@ pub const Measurements = struct {
 
     data: MeasurementsData,
 
+    resource: ?[]const Attribute = null,
+
     pub fn deinit(self: *Measurements, allocator: std.mem.Allocator) void {
         switch (self.data) {
             inline else => |list| {

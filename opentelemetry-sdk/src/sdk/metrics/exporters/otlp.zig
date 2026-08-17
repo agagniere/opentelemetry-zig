@@ -24,6 +24,7 @@ const view = @import("../view.zig");
 
 const protobuf = @import("protobuf");
 const pbcommon = @import("opentelemetry-proto").common_v1;
+const pbresource = @import("opentelemetry-proto").resource_v1;
 const pbmetrics = @import("opentelemetry-proto").metrics_v1;
 const pbcollector_metrics = @import("opentelemetry-proto").collector_metrics_v1;
 
@@ -107,8 +108,17 @@ pub const OTLPExporter = struct {
                 .metrics = metrics,
             };
         }
+        const resource_attributes = try resourceToProtobuf(
+            self.allocator,
+            if (data.len > 0) data[0].resource else null,
+        );
+
         resource_metrics[0] = pbmetrics.ResourceMetrics{
-            .resource = null, //FIXME support resource attributes
+            .resource = pbresource.Resource{
+                .attributes = resource_attributes,
+                .dropped_attributes_count = 0,
+                .entity_refs = std.ArrayList(pbcommon.EntityRef).empty,
+            },
             .scope_metrics = std.ArrayList(pbmetrics.ScopeMetrics).fromOwnedSlice(scope_metrics),
             .schema_url = "",
         };
@@ -202,6 +212,17 @@ fn attributeToProtobuf(allocator: std.mem.Allocator, attribute: Attribute) !pbco
             // TODO include nested Attribute values
         },
     };
+}
+
+fn resourceToProtobuf(allocator: std.mem.Allocator, resource: ?[]const Attribute) !std.ArrayList(pbcommon.KeyValue) {
+    var kvs = std.ArrayList(pbcommon.KeyValue).empty;
+    if (resource) |attrs| {
+        try kvs.ensureTotalCapacityPrecise(allocator, attrs.len);
+        for (attrs) |attr| {
+            kvs.appendAssumeCapacity(try attributeToProtobuf(allocator, attr));
+        }
+    }
+    return kvs;
 }
 
 pub fn attributesToProtobufKeyValueList(allocator: std.mem.Allocator, attributes: ?[]Attribute) !pbcommon.KeyValueList {
@@ -483,4 +504,34 @@ test "exporters/otlp init/deinit" {
 
     var exporter = try OTLPExporter.init(allocator, io, view.DefaultTemporality, config);
     defer exporter.deinit();
+}
+
+test "exporters/otlp resource conversion" {
+    const allocator = std.testing.allocator;
+
+    const resource = [_]Attribute{
+        .{ .key = "service.name", .value = .{ .string = "test-service" } },
+        .{ .key = "service.version", .value = .{ .string = "1.2.3" } },
+    };
+
+    var kvs = try resourceToProtobuf(allocator, &resource);
+    defer {
+        for (kvs.items) |*kv| kv.deinit(allocator);
+        kvs.deinit(allocator);
+    }
+
+    try std.testing.expectEqual(@as(usize, 2), kvs.items.len);
+    try std.testing.expectEqualStrings("service.name", kvs.items[0].key);
+    try std.testing.expectEqualStrings("test-service", kvs.items[0].value.?.value.?.string_value);
+    try std.testing.expectEqualStrings("service.version", kvs.items[1].key);
+    try std.testing.expectEqualStrings("1.2.3", kvs.items[1].value.?.value.?.string_value);
+}
+
+test "exporters/otlp resource conversion without a resource" {
+    const allocator = std.testing.allocator;
+
+    var kvs = try resourceToProtobuf(allocator, null);
+    defer kvs.deinit(allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), kvs.items.len);
 }

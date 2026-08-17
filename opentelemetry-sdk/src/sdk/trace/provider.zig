@@ -326,6 +326,7 @@ pub const Tracer = struct {
         // Create the span with instrumentation scope
         var span = trace_api.Span.init(allocator, span_context, span_name, options.kind, self.scope);
         span.is_recording = true; // SDK spans are recording by default
+        span.resource = self.provider.resource;
 
         // Set attributes if provided
         if (options.attributes) |attrs| {

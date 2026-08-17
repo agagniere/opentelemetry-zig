@@ -110,6 +110,7 @@ pub const MetricReader = struct {
 
                 for (measurements) |*m| {
                     try self.temporal_aggregation.process(m, self.temporality);
+                    m.resource = mp.resource;
                 }
 
                 // The exporter takes ownership of the data points, which are deinitialized
