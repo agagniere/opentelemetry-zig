@@ -179,6 +179,7 @@ pub const Span = struct {
     is_recording: bool,
     allocator: std.mem.Allocator,
     scope: InstrumentationScope,
+    resource: ?[]const attribute.Attribute = null,
 
     const Self = @This();
 

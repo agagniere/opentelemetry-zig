@@ -145,9 +145,19 @@ pub const OTLPExporter = struct {
             try scope_spans_list.append(self.allocator, scope_span);
         }
 
+        var resource_attributes = std.ArrayList(pbcommon.KeyValue).empty;
+        if (spans.len > 0) {
+            if (spans[0].resource) |attrs| {
+                try resource_attributes.ensureTotalCapacityPrecise(self.allocator, attrs.len);
+                for (attrs) |attr| {
+                    resource_attributes.appendAssumeCapacity(try attributeToOTLP(attr.key, attr.value));
+                }
+            }
+        }
+
         const resource_span = pbtrace.ResourceSpans{
             .resource = pbresource.Resource{
-                .attributes = std.ArrayList(pbcommon.KeyValue).empty,
+                .attributes = resource_attributes,
                 .dropped_attributes_count = 0,
                 .entity_refs = std.ArrayList(pbcommon.EntityRef).empty,
             },
@@ -461,4 +471,80 @@ test "OTLPExporter basic functionality" {
     const result = span_exporter.exportSpans(spans[0..]);
     // We expect a connection error since there's no OTLP server running
     try std.testing.expectError(error.ConnectionRefused, result);
+}
+
+test "span resource is exported" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    var env_map = std.process.Environ.Map.init(allocator);
+    defer env_map.deinit();
+
+    var config = try otlp.ConfigOptions.init(allocator, &env_map);
+    defer config.deinit();
+
+    var exporter = try OTLPExporter.init(allocator, io, config);
+    defer exporter.deinit();
+
+    const resource = [_]attribute.Attribute{
+        .{ .key = "service.name", .value = .{ .string = "test-service" } },
+        .{ .key = "service.version", .value = .{ .string = "1.2.3" } },
+    };
+
+    const trace_id = trace.TraceID.init([16]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 });
+    const span_id = trace.SpanID.init([8]u8{ 1, 2, 3, 4, 5, 6, 7, 8 });
+    var trace_state = trace.TraceState.init(allocator);
+    defer trace_state.deinit();
+
+    const span_context = trace.SpanContext.init(trace_id, span_id, trace.TraceFlags.default(), trace_state, false);
+    const scope = InstrumentationScope{ .name = "test-lib", .version = "1.0.0" };
+    var test_span = trace.Span.init(allocator, span_context, "test-span", .Internal, scope);
+    test_span.resource = &resource;
+    defer test_span.deinit();
+
+    var spans = [_]trace.Span{test_span};
+
+    var request = try exporter.spansToOTLPRequest(spans[0..]);
+    defer exporter.cleanupRequest(&request);
+
+    try std.testing.expectEqual(@as(usize, 1), request.resource_spans.items.len);
+
+    const exported = request.resource_spans.items[0].resource.?;
+    try std.testing.expectEqual(@as(usize, 2), exported.attributes.items.len);
+    try std.testing.expectEqualStrings("service.name", exported.attributes.items[0].key);
+    try std.testing.expectEqualStrings("test-service", exported.attributes.items[0].value.?.value.?.string_value);
+    try std.testing.expectEqualStrings("service.version", exported.attributes.items[1].key);
+    try std.testing.expectEqualStrings("1.2.3", exported.attributes.items[1].value.?.value.?.string_value);
+}
+
+test "spans without a resource export no resource attributes" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+
+    var env_map = std.process.Environ.Map.init(allocator);
+    defer env_map.deinit();
+
+    var config = try otlp.ConfigOptions.init(allocator, &env_map);
+    defer config.deinit();
+
+    var exporter = try OTLPExporter.init(allocator, io, config);
+    defer exporter.deinit();
+
+    const trace_id = trace.TraceID.init([16]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 });
+    const span_id = trace.SpanID.init([8]u8{ 1, 2, 3, 4, 5, 6, 7, 8 });
+    var trace_state = trace.TraceState.init(allocator);
+    defer trace_state.deinit();
+
+    const span_context = trace.SpanContext.init(trace_id, span_id, trace.TraceFlags.default(), trace_state, false);
+    const scope = InstrumentationScope{ .name = "test-lib", .version = "1.0.0" };
+    var test_span = trace.Span.init(allocator, span_context, "test-span", .Internal, scope);
+    defer test_span.deinit();
+
+    var spans = [_]trace.Span{test_span};
+
+    var request = try exporter.spansToOTLPRequest(spans[0..]);
+    defer exporter.cleanupRequest(&request);
+
+    const exported = request.resource_spans.items[0].resource.?;
+    try std.testing.expectEqual(@as(usize, 0), exported.attributes.items.len);
 }
