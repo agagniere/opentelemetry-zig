@@ -422,11 +422,11 @@ test "service.name from OTEL_RESOURCE_ATTRIBUTES survives resource building" {
     defer freeResource(allocator, resource);
 
     // service.name is resolved once in the configuration, so it is emitted exactly once.
-    try std.testing.expectEqual(@as(usize, 2), resource.len);
-    try std.testing.expectEqualStrings("service.name", resource[0].key);
-    try std.testing.expectEqualStrings("checkout", resource[0].value.string);
-    try std.testing.expectEqualStrings("host.name", resource[1].key);
-    try std.testing.expectEqualStrings("server-1", resource[1].value.string);
+    try std.testing.expectEqual(@as(usize, 5), resource.len);
+    try std.testing.expectEqualStrings("service.name", resource[3].key);
+    try std.testing.expectEqualStrings("checkout", resource[3].value.string);
+    try std.testing.expectEqualStrings("host.name", resource[4].key);
+    try std.testing.expectEqualStrings("server-1", resource[4].value.string);
 }
 
 test "service.name defaults to unknown_service when nothing is configured" {
@@ -441,7 +441,7 @@ test "service.name defaults to unknown_service when nothing is configured" {
     const resource = try buildFromConfig(allocator, config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(@as(usize, 1), resource.len);
-    try std.testing.expectEqualStrings("service.name", resource[0].key);
-    try std.testing.expect(std.mem.startsWith(u8, resource[0].value.string, "unknown_service"));
+    try std.testing.expectEqual(@as(usize, 4), resource.len);
+    try std.testing.expectEqualStrings("service.name", resource[3].key);
+    try std.testing.expect(std.mem.startsWith(u8, resource[3].value.string, "unknown_service"));
 }
