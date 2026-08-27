@@ -317,10 +317,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, env_map: *const EnvMap) !*
         .allocator = allocator,
         .sdk_disabled = parseBool(env_map, "OTEL_SDK_DISABLED") orelse false,
         .resource_detectors = parseResourceDetectors(env_map),
-        .service_name = if (env_map.get("OTEL_SERVICE_NAME")) |s|
-            try allocator.dupe(u8, s)
-        else
-            try resolveServiceName(allocator, io, env_map),
+        .service_name = try resolveServiceName(allocator, io, env_map),
         .resource_attributes = if (env_map.get("OTEL_RESOURCE_ATTRIBUTES")) |s|
             try allocator.dupe(u8, s)
         else
