@@ -21,24 +21,24 @@ const host_arch: []const u8 = switch (builtin.cpu.arch) {
     else => @tagName(builtin.cpu.arch),
 };
 
-/// SDK identity attributes, always added when the SDK is active.
+/// SDK identity attributes, provided by the "sdk" detector.
 const sdk_attributes = [_]Attribute{
     .{ .key = "telemetry.sdk.name", .value = .{ .string = build_info.name } },
     .{ .key = "telemetry.sdk.language", .value = .{ .string = "zig" } },
     .{ .key = "telemetry.sdk.version", .value = .{ .string = build_info.version } },
 };
 
-/// Attributes provided by the "os" detector (OTEL_EXPERIMENTAL_RESOURCE_DETECTORS=os).
+/// Attributes provided by the "os" detector.
 const os_attributes = [_]Attribute{
     .{ .key = "os.type", .value = .{ .string = os_type } },
 };
 
-/// Attributes provided by the "host" detector (OTEL_EXPERIMENTAL_RESOURCE_DETECTORS=host).
+/// Attributes provided by the "host" detector.
 const host_attributes = [_]Attribute{
     .{ .key = "host.arch", .value = .{ .string = host_arch } },
 };
 
-/// Attributes provided by the "process" detector (OTEL_EXPERIMENTAL_RESOURCE_DETECTORS=process).
+/// Attributes provided by the "process" detector.
 const process_attributes = [_]Attribute{
     .{ .key = "process.runtime.name", .value = .{ .string = "zig" } },
     .{ .key = "process.runtime.version", .value = .{ .string = builtin.zig_version_string } },
@@ -48,10 +48,11 @@ const process_attributes = [_]Attribute{
 /// Combines OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
 pub fn buildFromConfig(allocator: std.mem.Allocator, config: *const Configuration) ![]Attribute {
     const d = config.resource_detectors;
-    const extra = (if (d.os) os_attributes.len else 0) +
+    const detected = (if (d.sdk) sdk_attributes.len else 0) +
+        (if (d.os) os_attributes.len else 0) +
         (if (d.host) host_attributes.len else 0) +
         (if (d.process) process_attributes.len else 0);
-    var attributes: std.ArrayList(Attribute) = try .initCapacity(allocator, sdk_attributes.len + extra);
+    var attributes: std.ArrayList(Attribute) = try .initCapacity(allocator, detected);
     errdefer {
         for (attributes.items) |attr| {
             allocator.free(attr.key);
@@ -62,9 +63,9 @@ pub fn buildFromConfig(allocator: std.mem.Allocator, config: *const Configuratio
         attributes.deinit(allocator);
     }
 
-    for (sdk_attributes) |attr| {
+    if (d.sdk) for (sdk_attributes) |attr| {
         attributes.appendAssumeCapacity(try Attribute.dupe(allocator, attr));
-    }
+    };
     if (d.os) for (os_attributes) |attr| {
         attributes.appendAssumeCapacity(try Attribute.dupe(allocator, attr));
     };
@@ -169,7 +170,7 @@ test "buildFromConfig with service name only" {
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{},
+        .resource_detectors = .none,
         .service_name = "my-service",
         .resource_attributes = null,
         .log_level = .info,
@@ -182,9 +183,9 @@ test "buildFromConfig with service name only" {
     const resource = try buildFromConfig(allocator, &config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(@as(usize, 4), resource.len);
-    try std.testing.expectEqualStrings("service.name", resource[3].key);
-    try std.testing.expectEqualStrings("my-service", resource[3].value.string);
+    try std.testing.expectEqual(@as(usize, 1), resource.len);
+    try std.testing.expectEqualStrings("service.name", resource[0].key);
+    try std.testing.expectEqualStrings("my-service", resource[0].value.string);
 }
 
 test "buildFromConfig with resource attributes only" {
@@ -193,7 +194,7 @@ test "buildFromConfig with resource attributes only" {
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{},
+        .resource_detectors = .none,
         .service_name = null,
         .resource_attributes = "key1=value1,key2=value2",
         .log_level = .info,
@@ -206,11 +207,11 @@ test "buildFromConfig with resource attributes only" {
     const resource = try buildFromConfig(allocator, &config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(@as(usize, 5), resource.len);
-    try std.testing.expectEqualStrings("key1", resource[3].key);
-    try std.testing.expectEqualStrings("value1", resource[3].value.string);
-    try std.testing.expectEqualStrings("key2", resource[4].key);
-    try std.testing.expectEqualStrings("value2", resource[4].value.string);
+    try std.testing.expectEqual(@as(usize, 2), resource.len);
+    try std.testing.expectEqualStrings("key1", resource[0].key);
+    try std.testing.expectEqualStrings("value1", resource[0].value.string);
+    try std.testing.expectEqualStrings("key2", resource[1].key);
+    try std.testing.expectEqualStrings("value2", resource[1].value.string);
 }
 
 test "buildFromConfig with both service name and resource attributes" {
@@ -219,7 +220,7 @@ test "buildFromConfig with both service name and resource attributes" {
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{},
+        .resource_detectors = .none,
         .service_name = "test-service",
         .resource_attributes = "deployment.environment=production,host.name=server-1",
         .log_level = .info,
@@ -232,13 +233,13 @@ test "buildFromConfig with both service name and resource attributes" {
     const resource = try buildFromConfig(allocator, &config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(@as(usize, 6), resource.len);
-    try std.testing.expectEqualStrings("service.name", resource[3].key);
-    try std.testing.expectEqualStrings("test-service", resource[3].value.string);
-    try std.testing.expectEqualStrings("deployment.environment", resource[4].key);
-    try std.testing.expectEqualStrings("production", resource[4].value.string);
-    try std.testing.expectEqualStrings("host.name", resource[5].key);
-    try std.testing.expectEqualStrings("server-1", resource[5].value.string);
+    try std.testing.expectEqual(@as(usize, 3), resource.len);
+    try std.testing.expectEqualStrings("service.name", resource[0].key);
+    try std.testing.expectEqualStrings("test-service", resource[0].value.string);
+    try std.testing.expectEqualStrings("deployment.environment", resource[1].key);
+    try std.testing.expectEqualStrings("production", resource[1].value.string);
+    try std.testing.expectEqualStrings("host.name", resource[2].key);
+    try std.testing.expectEqualStrings("server-1", resource[2].value.string);
 }
 
 test "parseResourceAttributes with whitespace and empty values" {
@@ -247,7 +248,7 @@ test "parseResourceAttributes with whitespace and empty values" {
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{},
+        .resource_detectors = .none,
         .service_name = null,
         .resource_attributes = " key1 = value1 , key2=value2,  ,key3=",
         .log_level = .info,
@@ -261,22 +262,22 @@ test "parseResourceAttributes with whitespace and empty values" {
     defer freeResource(allocator, resource);
 
     // Should parse 3 valid attributes (key3 has empty value which is valid)
-    try std.testing.expectEqual(@as(usize, 6), resource.len);
-    try std.testing.expectEqualStrings("key1", resource[3].key);
-    try std.testing.expectEqualStrings("value1", resource[3].value.string);
-    try std.testing.expectEqualStrings("key2", resource[4].key);
-    try std.testing.expectEqualStrings("value2", resource[4].value.string);
-    try std.testing.expectEqualStrings("key3", resource[5].key);
-    try std.testing.expectEqualStrings("", resource[5].value.string);
+    try std.testing.expectEqual(@as(usize, 3), resource.len);
+    try std.testing.expectEqualStrings("key1", resource[0].key);
+    try std.testing.expectEqualStrings("value1", resource[0].value.string);
+    try std.testing.expectEqualStrings("key2", resource[1].key);
+    try std.testing.expectEqualStrings("value2", resource[1].value.string);
+    try std.testing.expectEqualStrings("key3", resource[2].key);
+    try std.testing.expectEqualStrings("", resource[2].value.string);
 }
 
-test "buildFromConfig with no resource configuration" {
+test "buildFromConfig with every detector disabled" {
     const allocator = std.testing.allocator;
 
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{},
+        .resource_detectors = .none,
         .service_name = null,
         .resource_attributes = null,
         .log_level = .info,
@@ -289,21 +290,16 @@ test "buildFromConfig with no resource configuration" {
     const resource = try buildFromConfig(allocator, &config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(sdk_attributes.len, resource.len);
-    try std.testing.expectEqualStrings("telemetry.sdk.name", resource[0].key);
-    try std.testing.expectEqualStrings("opentelemetry", resource[0].value.string);
-    try std.testing.expectEqualStrings("telemetry.sdk.language", resource[1].key);
-    try std.testing.expectEqualStrings("zig", resource[1].value.string);
-    try std.testing.expectEqualStrings("telemetry.sdk.version", resource[2].key);
+    try std.testing.expectEqual(@as(usize, 0), resource.len);
 }
 
-test "buildFromConfig with all resource detectors enabled" {
+test "buildFromConfig runs every detector by default" {
     const allocator = std.testing.allocator;
 
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{ .host = true, .os = true, .process = true },
+        .resource_detectors = .{},
         .service_name = null,
         .resource_attributes = null,
         .log_level = .info,
@@ -318,6 +314,11 @@ test "buildFromConfig with all resource detectors enabled" {
 
     const expected_len = sdk_attributes.len + os_attributes.len + host_attributes.len + process_attributes.len;
     try std.testing.expectEqual(expected_len, resource.len);
+    try std.testing.expectEqualStrings("telemetry.sdk.name", resource[0].key);
+    try std.testing.expectEqualStrings("opentelemetry", resource[0].value.string);
+    try std.testing.expectEqualStrings("telemetry.sdk.language", resource[1].key);
+    try std.testing.expectEqualStrings("zig", resource[1].value.string);
+    try std.testing.expectEqualStrings("telemetry.sdk.version", resource[2].key);
     try std.testing.expectEqualStrings("os.type", resource[3].key);
     try std.testing.expectEqualStrings("host.arch", resource[4].key);
     try std.testing.expectEqualStrings("process.runtime.name", resource[5].key);
@@ -326,13 +327,13 @@ test "buildFromConfig with all resource detectors enabled" {
     try std.testing.expectEqualStrings(builtin.zig_version_string, resource[6].value.string);
 }
 
-test "buildFromConfig with individual resource detectors" {
+test "buildFromConfig with a single detector opted out" {
     const allocator = std.testing.allocator;
 
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{ .os = true },
+        .resource_detectors = .{ .sdk = false },
         .service_name = null,
         .resource_attributes = null,
         .log_level = .info,
@@ -345,8 +346,33 @@ test "buildFromConfig with individual resource detectors" {
     const resource = try buildFromConfig(allocator, &config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(sdk_attributes.len + os_attributes.len, resource.len);
-    try std.testing.expectEqualStrings("os.type", resource[3].key);
+    try std.testing.expectEqual(os_attributes.len + host_attributes.len + process_attributes.len, resource.len);
+    try std.testing.expectEqualStrings("os.type", resource[0].key);
+    try std.testing.expectEqualStrings("host.arch", resource[1].key);
+    try std.testing.expectEqualStrings("process.runtime.name", resource[2].key);
+}
+
+test "buildFromConfig with a single detector opted in" {
+    const allocator = std.testing.allocator;
+
+    var config = Configuration{
+        .allocator = allocator,
+        .sdk_disabled = false,
+        .resource_detectors = .{ .sdk = false, .host = false, .process = false },
+        .service_name = null,
+        .resource_attributes = null,
+        .log_level = .info,
+        .trace_propagators = &.{},
+        .trace_config = undefined,
+        .metrics_config = undefined,
+        .logs_config = undefined,
+    };
+
+    const resource = try buildFromConfig(allocator, &config);
+    defer freeResource(allocator, resource);
+
+    try std.testing.expectEqual(os_attributes.len, resource.len);
+    try std.testing.expectEqualStrings("os.type", resource[0].key);
 }
 
 test "OTEL_SERVICE_NAME overrides service.name from OTEL_RESOURCE_ATTRIBUTES" {
@@ -355,7 +381,7 @@ test "OTEL_SERVICE_NAME overrides service.name from OTEL_RESOURCE_ATTRIBUTES" {
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{},
+        .resource_detectors = .none,
         .service_name = "override-service",
         .resource_attributes = "service.name=original-service,key1=value1",
         .log_level = .info,
@@ -368,15 +394,15 @@ test "OTEL_SERVICE_NAME overrides service.name from OTEL_RESOURCE_ATTRIBUTES" {
     const resource = try buildFromConfig(allocator, &config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(@as(usize, 5), resource.len);
+    try std.testing.expectEqual(@as(usize, 2), resource.len);
 
     // service.name should be from OTEL_SERVICE_NAME
-    try std.testing.expectEqualStrings("service.name", resource[3].key);
-    try std.testing.expectEqualStrings("override-service", resource[3].value.string);
+    try std.testing.expectEqualStrings("service.name", resource[0].key);
+    try std.testing.expectEqualStrings("override-service", resource[0].value.string);
 
     // key1 should be from OTEL_RESOURCE_ATTRIBUTES
-    try std.testing.expectEqualStrings("key1", resource[4].key);
-    try std.testing.expectEqualStrings("value1", resource[4].value.string);
+    try std.testing.expectEqualStrings("key1", resource[1].key);
+    try std.testing.expectEqualStrings("value1", resource[1].value.string);
 }
 
 test "service.name from OTEL_RESOURCE_ATTRIBUTES when OTEL_SERVICE_NAME not set" {
@@ -385,7 +411,7 @@ test "service.name from OTEL_RESOURCE_ATTRIBUTES when OTEL_SERVICE_NAME not set"
     var config = Configuration{
         .allocator = allocator,
         .sdk_disabled = false,
-        .resource_detectors = .{},
+        .resource_detectors = .none,
         .service_name = null,
         .resource_attributes = "service.name=from-resource-attrs,key1=value1",
         .log_level = .info,
@@ -398,14 +424,14 @@ test "service.name from OTEL_RESOURCE_ATTRIBUTES when OTEL_SERVICE_NAME not set"
     const resource = try buildFromConfig(allocator, &config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(@as(usize, 5), resource.len);
+    try std.testing.expectEqual(@as(usize, 2), resource.len);
 
     // service.name should be from OTEL_RESOURCE_ATTRIBUTES
-    try std.testing.expectEqualStrings("service.name", resource[3].key);
-    try std.testing.expectEqualStrings("from-resource-attrs", resource[3].value.string);
+    try std.testing.expectEqualStrings("service.name", resource[0].key);
+    try std.testing.expectEqualStrings("from-resource-attrs", resource[0].value.string);
 
-    try std.testing.expectEqualStrings("key1", resource[4].key);
-    try std.testing.expectEqualStrings("value1", resource[4].value.string);
+    try std.testing.expectEqualStrings("key1", resource[1].key);
+    try std.testing.expectEqualStrings("value1", resource[1].value.string);
 }
 
 test "service.name from OTEL_RESOURCE_ATTRIBUTES survives resource building" {
@@ -414,6 +440,8 @@ test "service.name from OTEL_RESOURCE_ATTRIBUTES survives resource building" {
     var env_map = std.process.Environ.Map.init(allocator);
     defer env_map.deinit();
     try env_map.put("OTEL_RESOURCE_ATTRIBUTES", "service.name=checkout,host.name=server-1");
+    // Keep the detectors out of the way, they have their own tests.
+    try env_map.put("OTEL_EXPERIMENTAL_RESOURCE_DETECTORS", "none");
 
     const config = try Configuration.init(allocator, std.testing.io, &env_map);
     defer config.deinit();
@@ -422,11 +450,11 @@ test "service.name from OTEL_RESOURCE_ATTRIBUTES survives resource building" {
     defer freeResource(allocator, resource);
 
     // service.name is resolved once in the configuration, so it is emitted exactly once.
-    try std.testing.expectEqual(@as(usize, 5), resource.len);
-    try std.testing.expectEqualStrings("service.name", resource[3].key);
-    try std.testing.expectEqualStrings("checkout", resource[3].value.string);
-    try std.testing.expectEqualStrings("host.name", resource[4].key);
-    try std.testing.expectEqualStrings("server-1", resource[4].value.string);
+    try std.testing.expectEqual(@as(usize, 2), resource.len);
+    try std.testing.expectEqualStrings("service.name", resource[0].key);
+    try std.testing.expectEqualStrings("checkout", resource[0].value.string);
+    try std.testing.expectEqualStrings("host.name", resource[1].key);
+    try std.testing.expectEqualStrings("server-1", resource[1].value.string);
 }
 
 test "service.name defaults to unknown_service when nothing is configured" {
@@ -434,6 +462,8 @@ test "service.name defaults to unknown_service when nothing is configured" {
 
     var env_map = std.process.Environ.Map.init(allocator);
     defer env_map.deinit();
+    // Keep the detectors out of the way, they have their own tests.
+    try env_map.put("OTEL_EXPERIMENTAL_RESOURCE_DETECTORS", "none");
 
     const config = try Configuration.init(allocator, std.testing.io, &env_map);
     defer config.deinit();
@@ -441,7 +471,7 @@ test "service.name defaults to unknown_service when nothing is configured" {
     const resource = try buildFromConfig(allocator, config);
     defer freeResource(allocator, resource);
 
-    try std.testing.expectEqual(@as(usize, 4), resource.len);
-    try std.testing.expectEqualStrings("service.name", resource[3].key);
-    try std.testing.expect(std.mem.startsWith(u8, resource[3].value.string, "unknown_service"));
+    try std.testing.expectEqual(@as(usize, 1), resource.len);
+    try std.testing.expectEqualStrings("service.name", resource[0].key);
+    try std.testing.expect(std.mem.startsWith(u8, resource[0].value.string, "unknown_service"));
 }
