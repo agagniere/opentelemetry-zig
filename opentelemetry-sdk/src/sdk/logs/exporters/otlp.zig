@@ -206,6 +206,12 @@ pub const OTLPExporter = struct {
                     log_record.attributes.deinit(self.allocator);
                     if (log_record.trace_id.len > 0) self.allocator.free(log_record.trace_id);
                     if (log_record.span_id.len > 0) self.allocator.free(log_record.span_id);
+                    if (log_record.body) |*b| {
+                        if (b.value) |*v| switch (v.*) {
+                            .kvlist_value => |*kv| kv.values.deinit(self.allocator),
+                            else => {},
+                        };
+                    }
                 }
                 scope_log.log_records.deinit(self.allocator);
             }
@@ -243,10 +249,16 @@ pub const OTLPExporter = struct {
             "";
 
         // Convert body to AnyValue
-        const body: ?pbcommon.AnyValue = if (log_record.body) |b|
-            pbcommon.AnyValue{ .value = .{ .string_value = (b) } }
-        else
-            null;
+        const body: ?pbcommon.AnyValue = if (log_record.body) |b| switch (b) {
+            .string => |s| pbcommon.AnyValue{ .value = .{ .string_value = s } },
+            .structured => |kvs| blk: {
+                var kvlist: std.ArrayList(pbcommon.KeyValue) = try .initCapacity(self.allocator, kvs.len);
+                for (kvs) |attr| {
+                    kvlist.appendAssumeCapacity(try attributeToOTLP(attr.key, attr.value));
+                }
+                break :blk pbcommon.AnyValue{ .value = .{ .kvlist_value = .{ .values = kvlist } } };
+            },
+        } else null;
 
         // Use timestamp if available, otherwise use observed_timestamp
         const time_unix_nano = log_record.timestamp orelse log_record.observed_timestamp;
@@ -262,6 +274,7 @@ pub const OTLPExporter = struct {
             .flags = log_record.trace_flags orelse 0,
             .trace_id = (trace_id_str),
             .span_id = (span_id_str),
+            .event_name = log_record.event_name orelse "",
         };
     }
 
@@ -417,11 +430,12 @@ test "Log record to OTLP conversion with all fields" {
         .trace_flags = null,
         .severity_number = 17, // ERROR
         .severity_text = "ERROR",
-        .body = "Test log message",
+        .body = .{ .string = "Test log message" },
         .attributes = attrs,
         .resource = null,
         .scope = scope,
         .location = .{ .module = "mylib", .file = "src/mylib.zig", .fn_name = "doWork", .line = 42, .column = 4 },
+        .event_name = "test.event",
     };
 
     var otlp_log = try exporter.logRecordToOTLP(log_record);
@@ -451,6 +465,7 @@ test "Log record to OTLP conversion with all fields" {
     try std.testing.expectEqual(@as(i64, 42), otlp_log.attributes.items[4].value.?.value.?.int_value);
     try std.testing.expectEqualStrings("code.column.number", otlp_log.attributes.items[5].key);
     try std.testing.expectEqual(@as(i64, 4), otlp_log.attributes.items[5].value.?.value.?.int_value);
+    try std.testing.expectEqualStrings("test.event", otlp_log.event_name);
 }
 
 test "Log records grouped by instrumentation scope" {
@@ -479,11 +494,12 @@ test "Log records grouped by instrumentation scope" {
             .trace_flags = null,
             .severity_number = 9,
             .severity_text = "INFO",
-            .body = "Message from lib1",
+            .body = .{ .string = "Message from lib1" },
             .attributes = &[_]attribute.Attribute{},
             .resource = null,
             .scope = scope1,
             .location = null,
+            .event_name = null,
         },
         logs.ReadableLogRecord{
             .timestamp = null,
@@ -493,11 +509,12 @@ test "Log records grouped by instrumentation scope" {
             .trace_flags = null,
             .severity_number = 17,
             .severity_text = "ERROR",
-            .body = "Message from lib2",
+            .body = .{ .string = "Message from lib2" },
             .attributes = &[_]attribute.Attribute{},
             .resource = null,
             .scope = scope2,
             .location = null,
+            .event_name = null,
         },
         logs.ReadableLogRecord{
             .timestamp = null,
@@ -507,11 +524,12 @@ test "Log records grouped by instrumentation scope" {
             .trace_flags = null,
             .severity_number = 9,
             .severity_text = "INFO",
-            .body = "Another message from lib1",
+            .body = .{ .string = "Another message from lib1" },
             .attributes = &[_]attribute.Attribute{},
             .resource = null,
             .scope = scope1,
             .location = null,
+            .event_name = null,
         },
     };
 
@@ -580,11 +598,12 @@ test "Resource attributes in OTLP export" {
             .trace_flags = null,
             .severity_number = 9,
             .severity_text = "INFO",
-            .body = "Test message",
+            .body = .{ .string = "Test message" },
             .attributes = &[_]attribute.Attribute{},
             .resource = resource_attrs,
             .scope = scope,
             .location = null,
+            .event_name = null,
         },
     };
 
@@ -629,11 +648,12 @@ test "Trace context binary encoding" {
         .trace_flags = null,
         .severity_number = 9,
         .severity_text = "INFO",
-        .body = "Test",
+        .body = .{ .string = "Test" },
         .attributes = &[_]attribute.Attribute{},
         .resource = null,
         .scope = scope,
         .location = null,
+        .event_name = null,
     };
 
     var otlp_log = try exporter.logRecordToOTLP(log_record);
@@ -675,11 +695,12 @@ test "Memory cleanup verification" {
             .trace_flags = null,
             .severity_number = 9,
             .severity_text = "INFO",
-            .body = "Test",
+            .body = .{ .string = "Test" },
             .attributes = attrs,
             .resource = null,
             .scope = scope,
             .location = null,
+            .event_name = null,
         },
     };
 
