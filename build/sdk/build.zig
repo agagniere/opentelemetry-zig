@@ -8,7 +8,7 @@ const CompilationInfo = helpers.CompilationInfo;
 // Path of the OpenTelemetry SDK source root directory relative to the build.zig file.
 const sdk_root = "opentelemetry-sdk";
 
-const GrpcProvider = enum { none };
+const GrpcProvider = enum { none, libgrpc };
 
 // Sets up the dependencies, modules and static library for the OpenTelemetry
 // SDK, and installs its artifacts and headers.
@@ -17,7 +17,10 @@ pub fn Setup(
     info: CompilationInfo,
     dependencies: *BuildModules,
 ) !void {
-    try modules(b, info, dependencies);
+    // False on the first pass when the selected gRPC backend is a lazy
+    // dependency that still needs fetching: Zig fetches it and re-runs the
+    // build, so there is nothing left to set up in this pass.
+    if (!try modules(b, info, dependencies)) return;
 
     const sdk_lib = b.addLibrary(.{
         .name = "opentelemetry-sdk",
@@ -43,7 +46,10 @@ pub fn Setup(
     docs_step.dependOn(&sdk_lib.step);
 }
 
-fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !void {
+// Returns false when a lazy dependency needed by the selected gRPC backend is
+// not fetched yet; the caller must then stop configuring, letting Zig fetch it
+// and re-run the build.
+fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !bool {
     const clock_mod = b.createModule(.{
         .root_source_file = b.path(sdk_root ++ "/src/clock.zig"),
         .target = info.target,
@@ -63,6 +69,21 @@ fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !v
             .target = info.target,
             .optimize = info.optimize,
         }),
+        .libgrpc => blk: {
+            // Null on the first pass: Zig fetches the lazy dep and re-runs the build.
+            const cgrpc_dep = b.lazyDependency("cgrpc_wrapper", .{
+                .target = info.target,
+                .optimize = info.optimize,
+            }) orelse return false;
+            break :blk b.createModule(.{
+                .root_source_file = b.path(sdk_root ++ "/src/grpc/libgrpc.zig"),
+                .target = info.target,
+                .optimize = info.optimize,
+                .imports = &.{
+                    .{ .name = "cgrpc_wrapper", .module = cgrpc_dep.module("cgrpc_wrapper") },
+                },
+            });
+        },
     };
     try dependencies.put("grpc_transport", grpc_transport_mod);
 
@@ -114,7 +135,7 @@ fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !v
     });
     try dependencies.put("otlp-stub", otel_stub_mod);
 
-    return;
+    return true;
 }
 
 // Registers the "sdk-test" step, building and running the SDK unit tests.
