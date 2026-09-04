@@ -123,6 +123,10 @@ pub const Attribute = struct {
     }
 };
 
+/// Builds an attribute list from a struct literal at compile time, see `attributes/flatten.zig`.
+pub const flatten = @import("attributes/flatten.zig").flatten;
+pub const flatCount = @import("attributes/flatten.zig").flatCount;
+
 /// Creates a slice of attributes from a list of key-value pairs.
 /// Caller owns the returned memory and should free the slice when done
 /// through the same allocator.
