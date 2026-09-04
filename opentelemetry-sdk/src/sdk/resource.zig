@@ -2,6 +2,7 @@ const std = @import("std");
 const Attribute = @import("../attributes.zig").Attribute;
 const AttributeValue = @import("../attributes.zig").AttributeValue;
 const Configuration = @import("config.zig").Configuration;
+const AttributeListIterator = @import("attribute_list.zig").AttributeListIterator;
 
 /// Build resource attributes from configuration
 /// Combines OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
@@ -46,40 +47,27 @@ fn parseResourceAttributes(
     attributes: *std.ArrayList(Attribute),
     skip_service_name: bool,
 ) !void {
-    var iter = std.mem.splitScalar(u8, attrs_str, ',');
-    while (iter.next()) |pair| {
-        const trimmed = std.mem.trim(u8, pair, &std.ascii.whitespace);
-        if (trimmed.len == 0) continue;
-
-        // Split on '=' to get key and value
-        const eq_pos = std.mem.indexOf(u8, trimmed, "=") orelse {
-            std.log.warn("Invalid resource attribute (missing '='): {s}", .{trimmed});
+    var iter: AttributeListIterator = .init(attrs_str);
+    while (iter.next()) |entry| {
+        const value = entry.value orelse {
+            std.log.warn("Invalid resource attribute (missing '='): {s}", .{entry.name});
             continue;
         };
 
-        const key_part = std.mem.trim(u8, trimmed[0..eq_pos], &std.ascii.whitespace);
-        const value_part = std.mem.trim(u8, trimmed[eq_pos + 1 ..], &std.ascii.whitespace);
-
-        if (key_part.len == 0) {
-            std.log.warn("Invalid resource attribute (empty key): {s}", .{trimmed});
+        if (entry.name.len == 0) {
+            std.log.warn("Invalid resource attribute (empty key): ={s}", .{value});
             continue;
         }
 
         // Skip service.name if OTEL_SERVICE_NAME is set (it takes precedence)
-        if (skip_service_name and std.mem.eql(u8, key_part, "service.name")) {
+        if (skip_service_name and std.mem.eql(u8, entry.name, "service.name")) {
             continue;
         }
 
-        const key = try allocator.dupe(u8, key_part);
-        errdefer allocator.free(key);
-
-        const value = try allocator.dupe(u8, value_part);
-        errdefer allocator.free(value);
-
-        try attributes.append(allocator, Attribute{
-            .key = key,
-            .value = AttributeValue{ .string = value },
-        });
+        try attributes.append(allocator, try Attribute.dupe(allocator, .{
+            .key = entry.name,
+            .value = .{ .string = value },
+        }));
     }
 }
 
