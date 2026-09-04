@@ -421,7 +421,7 @@ pub const Logger = struct {
     /// Example:
     /// ```zig
     /// const attrs = sdk.attributes.fromPairs(.{
-    ///     .{ semconv.attribute.http_request_method, semconv.attribute.http_request_methodValue.get },
+    ///     .{ semconv.attribute.http_request_method, .get },
     ///     .{ semconv.attribute.http_response_status_code, 200 },
     /// });
     /// logger.emitStructured(.info, .{

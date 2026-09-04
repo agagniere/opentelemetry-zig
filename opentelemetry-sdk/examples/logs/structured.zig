@@ -37,10 +37,11 @@ pub fn main(init: std.process.Init) !void {
 
     // 3. The same, from key-value pairs. A key can be a semantic convention definition,
     //    which saves reaching for `.name` (or `.base.name`, for the ones with well-known
-    //    values), and those well-known values can be passed as they are.
+    //    values). A definition that has well-known values also names their enum, so `.get`
+    //    below is enough to mean `semconv.attribute.http_request_methodValue.get`.
     heading("plain body, attributes from semantic conventions");
     const request_attrs = sdk.attributes.fromPairs(.{
-        .{ semconv.attribute.http_request_method, semconv.attribute.http_request_methodValue.get },
+        .{ semconv.attribute.http_request_method, .get },
         .{ semconv.attribute.http_response_status_code, 200 },
         .{ semconv.attribute.url_path, "/api/users" },
     });

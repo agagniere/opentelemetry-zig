@@ -41,6 +41,8 @@ fn toAttributeValue(v: anytype) AttributeValue {
             .{ .string = v.toString() }
         else
             @compileError("enum " ++ @typeName(T) ++ " has no toString() to spell its attribute value"),
+        // Reached from `flatten`, where nothing names the enum a literal belongs to.
+        .enum_literal => @compileError("an enum literal does not name its enum: pass it to fromPairs keyed by a semantic convention enum attribute definition, or spell the value out"),
         else => @compileError("unsupported type for attribute value: " ++ @typeName(T)),
     };
 }
@@ -73,6 +75,27 @@ fn keyOf(definition: anytype) []const u8 {
     @compileError("attribute key must be a string or a semantic convention attribute definition, found " ++ @typeName(T));
 }
 
+/// The enum a semantic convention enum attribute definition draws its well-known values
+/// from, or null for any other kind of key. Matched structurally like `keyOf`, on the
+/// `well_known_values` field of `types.EnumAttribute`.
+fn wellKnownEnum(comptime T: type) ?type {
+    if (@typeInfo(T) != .@"struct" or !@hasField(T, "well_known_values")) return null;
+    const E = @FieldType(T, "well_known_values");
+    return if (@typeInfo(E) == .@"enum") E else null;
+}
+
+/// The value of a pair. A bare enum literal is resolved against the enum of the key's
+/// definition, so that `.{ semconv.attribute.http_request_method, .get }` says as much as
+/// naming the value type in full; anything else converts on its own.
+fn valueOf(definition: anytype, value: anytype) AttributeValue {
+    if (comptime @typeInfo(@TypeOf(value)) == .enum_literal) {
+        const E = comptime wellKnownEnum(@TypeOf(definition)) orelse
+            @compileError("an enum literal needs a semantic convention enum attribute definition as its key to name its enum, found " ++ @typeName(@TypeOf(definition)));
+        return toAttributeValue(@as(E, value));
+    }
+    return toAttributeValue(value);
+}
+
 fn pairFields(comptime T: type) []const std.builtin.Type.StructField {
     const info = @typeInfo(T);
     if (info != .@"struct" or !info.@"struct".is_tuple) {
@@ -93,13 +116,18 @@ fn pairFields(comptime T: type) []const std.builtin.Type.StructField {
 /// module, which keeps convention names out of the call site:
 /// ```zig
 /// const attrs = fromPairs(.{
-///     .{ semconv.attribute.http_request_method, semconv.attribute.http_request_methodValue.get },
+///     .{ semconv.attribute.http_request_method, .get },
 ///     .{ semconv.attribute.http_response_status_code, 200 },
 ///     .{ "acme.tenant.id", tenant_id },
 /// });
 /// ```
 /// Values must be a `[]const u8`, a `bool`, an integer, a float, or an enum spelling its
 /// value through `toString()`, which is how semantic convention enum values are written.
+///
+/// A key that defines well-known values also names their enum, so those values can be
+/// written as bare enum literals: `.get` above stands for
+/// `semconv.attribute.http_request_methodValue.get`. A value outside the set is a compile
+/// error, but a plain string is still accepted, for the conventions whose set is open.
 ///
 /// Keys taken from a definition and string values are borrowed, not copied. The returned
 /// array is owned by the caller and must outlive every use of the attributes it holds.
@@ -109,7 +137,7 @@ pub fn fromPairs(pairs: anytype) [pairFields(@TypeOf(pairs)).len]Attribute {
     var attrs: [pairFields(@TypeOf(pairs)).len]Attribute = undefined;
     inline for (comptime pairFields(@TypeOf(pairs)), 0..) |field, i| {
         const pair = @field(pairs, field.name);
-        attrs[i] = .{ .key = keyOf(pair[0]), .value = toAttributeValue(pair[1]) };
+        attrs[i] = .{ .key = keyOf(pair[0]), .value = valueOf(pair[0], pair[1]) };
     }
     return attrs;
 }
@@ -189,9 +217,11 @@ test "fromPairs takes the key from a semantic convention definition" {
     const Definition = struct { name: []const u8, stability: enum { stable } };
     const Method = enum {
         get,
+        post,
         pub fn toString(self: @This()) []const u8 {
             return switch (self) {
                 .get => "GET",
+                .post => "POST",
             };
         }
     };
@@ -220,6 +250,48 @@ test "fromPairs takes the key from a semantic convention definition" {
     // The result coerces to the slice type the signals take.
     const slice: []const Attribute = &attrs;
     try std.testing.expectEqual(@as(usize, 3), slice.len);
+}
+
+test "fromPairs resolves an enum literal against the enum of its key" {
+    const Method = enum {
+        get,
+        post,
+        pub fn toString(self: @This()) []const u8 {
+            return switch (self) {
+                .get => "GET",
+                .post => "POST",
+            };
+        }
+    };
+    const Definition = struct { name: []const u8 };
+    const EnumDefinition = struct { base: Definition, well_known_values: Method };
+
+    const http_request_method: EnumDefinition = .{
+        .base = .{ .name = "http.request.method" },
+        .well_known_values = .get,
+    };
+    // An open set: the definition has well-known values, but any string is allowed.
+    const error_type: EnumDefinition = .{
+        .base = .{ .name = "error.type" },
+        .well_known_values = .get,
+    };
+
+    // A literal is comptime-only, which makes it a comptime field of the pairs tuple;
+    // runtime values in the other pairs are unaffected.
+    var tenant: []const u8 = "";
+    tenant = "t-42";
+
+    const attrs = fromPairs(.{
+        .{ http_request_method, .post },
+        .{ error_type, "ConnectionResetError" },
+        .{ "acme.tenant.id", tenant },
+    });
+
+    try std.testing.expectEqualStrings("http.request.method", attrs[0].key);
+    try std.testing.expectEqualStrings("POST", attrs[0].value.string);
+    try std.testing.expectEqualStrings("error.type", attrs[1].key);
+    try std.testing.expectEqualStrings("ConnectionResetError", attrs[1].value.string);
+    try std.testing.expectEqualStrings("t-42", attrs[2].value.string);
 }
 
 test "fromPairs accepts runtime values" {
