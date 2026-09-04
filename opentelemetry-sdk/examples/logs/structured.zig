@@ -1,8 +1,10 @@
 //! Shows the ways of shaping a log record: a plain string body or a structured one,
-//! with attributes written by hand or derived from a struct literal at compile time.
+//! with attributes written by hand, taken from the semantic conventions, or derived from
+//! a struct literal at compile time.
 
 const std = @import("std");
 const sdk = @import("opentelemetry-sdk");
+const semconv = @import("opentelemetry-semconv");
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
@@ -24,28 +26,38 @@ pub fn main(init: std.process.Init) !void {
     heading("plain body");
     logger.emit(.info, "Application started", .{});
 
-    // 2. Attributes written by hand, one Attribute per key.
+    // 2. Attributes written by hand, one Attribute per key. Names covered by the semantic
+    //    conventions come from the semconv module rather than being spelled out here.
     heading("plain body, attributes written by hand");
     const server_attrs = [_]sdk.attributes.Attribute{
-        .{ .key = "server.address", .value = .{ .string = "localhost" } },
-        .{ .key = "server.port", .value = .{ .int = 8080 } },
+        .{ .key = semconv.attribute.server_address.name, .value = .{ .string = "localhost" } },
+        .{ .key = semconv.attribute.server_port.name, .value = .{ .int = 8080 } },
     };
     logger.emit(.info, "Listening for connections", .{ .attributes = &server_attrs });
 
-    // 3. The same list from a struct literal. Nested literals become the dot-delimited
-    //    keys the semantic conventions use, so `.http.request.method` is written as a
-    //    nested literal rather than an @"http.request.method" field name.
-    heading("plain body, attributes from a struct literal");
-    const request_attrs = sdk.attributes.flatten(.{
-        .http = .{
-            .request = .{ .method = "GET" },
-            .response = .{ .status_code = 200 },
-        },
-        .url = .{ .path = "/api/users" },
+    // 3. The same, from key-value pairs. A key can be a semantic convention definition,
+    //    which saves reaching for `.name` (or `.base.name`, for the ones with well-known
+    //    values), and those well-known values can be passed as they are.
+    heading("plain body, attributes from semantic conventions");
+    const request_attrs = sdk.attributes.fromPairs(.{
+        .{ semconv.attribute.http_request_method, semconv.attribute.http_request_methodValue.get },
+        .{ semconv.attribute.http_response_status_code, 200 },
+        .{ semconv.attribute.url_path, "/api/users" },
     });
     logger.emit(.info, "Request handled", .{ .attributes = &request_attrs });
 
-    // 4. A structured body: the payload of the record is key-value fields instead of
+    // 4. Attributes this application owns, from a struct literal: nested literals become
+    //    dot-delimited keys, so a whole namespace is written once.
+    heading("plain body, attributes from a struct literal");
+    const checkout_attrs = sdk.attributes.flatten(.{
+        .checkout = .{
+            .cart = .{ .items = 3, .currency = "EUR" },
+            .coupon = .{ .applied = true },
+        },
+    });
+    logger.emit(.info, "Checkout completed", .{ .attributes = &checkout_attrs });
+
+    // 5. A structured body: the payload of the record is key-value fields instead of
     //    a message. Values can be computed at runtime.
     heading("structured body");
     const users = [_][]const u8{ "alice", "bob", "carol" };
@@ -55,7 +67,7 @@ pub fn main(init: std.process.Init) !void {
         .truncated = false,
     }, .{});
 
-    // 5. Both at once, with an event name. Fields covered by the semantic conventions
+    // 6. Both at once, with an event name. Fields covered by the semantic conventions
     //    belong in the attributes, which backends index; the body carries what is
     //    specific to this event.
     //    See https://opentelemetry.io/docs/specs/semconv/general/events/
@@ -68,7 +80,7 @@ pub fn main(init: std.process.Init) !void {
         .attributes = &request_attrs,
     });
 
-    // 6. The attribute list can also be built inline: the temporary lives until the end
+    // 7. The attribute list can also be built inline: the temporary lives until the end
     //    of the statement, which covers the whole emit call.
     heading("attributes built inline");
     logger.emitStructured(.err, .{
@@ -76,9 +88,10 @@ pub fn main(init: std.process.Init) !void {
         .attempts = 3,
     }, .{
         .event_name = "app.upstream.failed",
-        .attributes = &sdk.attributes.flatten(.{
-            .server = .{ .address = "upstream.example.com", .port = 443 },
-            .error_type = "ConnectionResetError",
+        .attributes = &sdk.attributes.fromPairs(.{
+            .{ semconv.attribute.server_address, "upstream.example.com" },
+            .{ semconv.attribute.server_port, 443 },
+            .{ semconv.attribute.error_type, "ConnectionResetError" },
         }),
     });
 

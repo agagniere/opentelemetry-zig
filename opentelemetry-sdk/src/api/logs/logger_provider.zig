@@ -14,6 +14,7 @@ const LogRecordProcessor = @import("../../sdk/logs/log_record_processor.zig").Lo
 const Attribute = @import("../../attributes.zig").Attribute;
 const Attributes = @import("../../attributes.zig").Attributes;
 const flattenAttributes = @import("../../attributes.zig").flatten;
+const attributesFromPairs = @import("../../attributes.zig").fromPairs;
 const InstrumentationScope = @import("../../scope.zig").InstrumentationScope;
 const context_api = @import("../context/context.zig");
 const Context = context_api.Context;
@@ -414,12 +415,14 @@ pub const Logger = struct {
     /// belongs in `options.attributes` instead, which backends index and which conventions
     /// require for structured event details: see
     /// https://opentelemetry.io/docs/specs/semconv/general/events/
-    /// `sdk.attributes.flatten` builds that list from the same kind of struct literal.
+    /// `sdk.attributes.fromPairs` builds that list from convention definitions, and
+    /// `sdk.attributes.flatten` from a struct literal for the attributes an application owns.
     ///
     /// Example:
     /// ```zig
-    /// const attrs = sdk.attributes.flatten(.{
-    ///     .http = .{ .request = .{ .method = "GET" }, .response = .{ .status_code = 200 } },
+    /// const attrs = sdk.attributes.fromPairs(.{
+    ///     .{ semconv.attribute.http_request_method, semconv.attribute.http_request_methodValue.get },
+    ///     .{ semconv.attribute.http_response_status_code, 200 },
     /// });
     /// logger.emitStructured(.info, .{
     ///     .cache = .{ .hit = false, .lookup_ms = 0.4 },
@@ -1023,8 +1026,12 @@ test "Logger.emitStructured flattens nested body fields and keeps attributes sep
     const logger = try provider.getLogger(scope);
 
     // Semantic convention fields go in the attributes, the event payload in the body.
-    const attrs = flattenAttributes(.{
-        .http = .{ .request = .{ .method = "GET" }, .response = .{ .status_code = 200 } },
+    // Their names are spelled out here because the SDK does not depend on the semconv
+    // module; applications pass its definitions to fromPairs instead, as the
+    // examples/logs/structured.zig example does.
+    const attrs = attributesFromPairs(.{
+        .{ "http.request.method", "GET" },
+        .{ "http.response.status_code", 200 },
     });
     logger.emitStructured(.info, .{
         .cache = .{ .hit = false, .lookup_ms = 0.4 },
@@ -1047,8 +1054,9 @@ test "Logger.emitStructured flattens nested body fields and keeps attributes sep
         .upstream_retries = 0,
     }, .{
         .event_name = "app.request.handled",
-        .attributes = &flattenAttributes(.{
-            .http = .{ .request = .{ .method = "POST" }, .response = .{ .status_code = 204 } },
+        .attributes = &attributesFromPairs(.{
+            .{ "http.request.method", "POST" },
+            .{ "http.response.status_code", 204 },
         }),
     });
 
