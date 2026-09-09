@@ -1,13 +1,23 @@
 const std = @import("std");
 const Attribute = @import("../attributes.zig").Attribute;
-const AttributeValue = @import("../attributes.zig").AttributeValue;
 const Configuration = @import("config.zig").Configuration;
 const AssignationIterator = @import("assignation.zig").AssignationIterator;
 
 /// Build resource attributes from configuration
 /// Combines OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
 pub fn buildFromConfig(allocator: std.mem.Allocator, config: *const Configuration) ![]Attribute {
-    var attributes: std.ArrayList(Attribute) = .empty;
+    const has_service_name = config.service_name != null;
+
+    // Both sources below append at most one attribute per entry, and a
+    // comma-separated list holds at most one more entry than it has commas.
+    // Reserving that many up front makes the appends infallible, so a duped
+    // attribute can never be orphaned between `Attribute.dupe` and the append.
+    var max_attributes: usize = @intFromBool(has_service_name);
+    if (config.resource_attributes) |resource_attrs| {
+        max_attributes += std.mem.countScalar(u8, resource_attrs, ',') + 1;
+    }
+
+    var attributes: std.ArrayList(Attribute) = try .initCapacity(allocator, max_attributes);
     errdefer {
         for (attributes.items) |attr| {
             allocator.free(attr.key);
@@ -19,14 +29,11 @@ pub fn buildFromConfig(allocator: std.mem.Allocator, config: *const Configuratio
     }
 
     // Add service.name if configured
-    const has_service_name = config.service_name != null;
     if (config.service_name) |service_name| {
-        const key = try allocator.dupe(u8, "service.name");
-        const value = try allocator.dupe(u8, service_name);
-        try attributes.append(allocator, Attribute{
-            .key = key,
-            .value = AttributeValue{ .string = value },
-        });
+        attributes.appendAssumeCapacity(try Attribute.dupe(allocator, .{
+            .key = "service.name",
+            .value = .{ .string = service_name },
+        }));
     }
 
     // Parse and add resource attributes
@@ -41,6 +48,7 @@ pub fn buildFromConfig(allocator: std.mem.Allocator, config: *const Configuratio
 /// Parse resource attributes from comma-separated key=value pairs
 /// Format: "key1=value1,key2=value2"
 /// If skip_service_name is true, service.name entries will be skipped (OTEL_SERVICE_NAME takes precedence)
+/// `attributes` must already have capacity for one entry per item in `attrs_str`.
 fn parseResourceAttributes(
     allocator: std.mem.Allocator,
     attrs_str: []const u8,
@@ -64,7 +72,7 @@ fn parseResourceAttributes(
             continue;
         }
 
-        try attributes.append(allocator, try Attribute.dupe(allocator, .{
+        attributes.appendAssumeCapacity(try Attribute.dupe(allocator, .{
             .key = entry.name,
             .value = .{ .string = value },
         }));
