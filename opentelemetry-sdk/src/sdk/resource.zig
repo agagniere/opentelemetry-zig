@@ -2,7 +2,7 @@ const std = @import("std");
 const Attribute = @import("../attributes.zig").Attribute;
 const AttributeValue = @import("../attributes.zig").AttributeValue;
 const Configuration = @import("config.zig").Configuration;
-const AttributeListIterator = @import("attribute_list.zig").AttributeListIterator;
+const AssignationIterator = @import("assignation.zig").AssignationIterator;
 
 /// Build resource attributes from configuration
 /// Combines OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
@@ -47,7 +47,7 @@ fn parseResourceAttributes(
     attributes: *std.ArrayList(Attribute),
     skip_service_name: bool,
 ) !void {
-    var iter: AttributeListIterator = .init(attrs_str);
+    var iter: AssignationIterator = .init(attrs_str);
     while (iter.next()) |entry| {
         const value = entry.value orelse {
             std.log.warn("Invalid resource attribute (missing '='): {s}", .{entry.name});

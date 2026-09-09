@@ -6,7 +6,7 @@ test {
     _ = @import("sdk/config.zig");
     _ = @import("sdk/resource.zig");
     _ = @import("sdk/propagation.zig");
-    _ = @import("sdk/attribute_list.zig");
+    _ = @import("sdk/assignation.zig");
     // helpers
     _ = @import("attributes.zig");
     _ = @import("scope.zig");

@@ -13,6 +13,9 @@ const std = @import("std");
 ///
 /// The iterator borrows the buffer passed to `init`; the returned slices point
 /// into it and are valid for as long as it is.
+///
+/// A list of plain values rather than assignations needs none of this: reach for
+/// `std.mem.tokenizeScalar` with a `std.mem.trim` per item instead.
 pub fn Iterator(comptime separator: u8, comptime assignator: u8) type {
     return struct {
         // tokenizeScalar (rather than splitScalar) already skips empty entries,
@@ -59,14 +62,15 @@ pub fn Iterator(comptime separator: u8, comptime assignator: u8) type {
     };
 }
 
-/// Iterator over OTel attribute lists such as the value of
-/// `OTEL_RESOURCE_ATTRIBUTES`: `key1=value1,key2=value2`.
-pub const AttributeListIterator = Iterator(',', '=');
+/// Iterator over comma-separated `name=value` pairs, the shape taken by most
+/// OTel environment variables that carry assignations: `OTEL_RESOURCE_ATTRIBUTES`,
+/// `OTEL_EXPORTER_OTLP_HEADERS`, W3C `tracestate` and `baggage` entries.
+pub const AssignationIterator = Iterator(',', '=');
 
 fn expectEntry(
     expected_name: []const u8,
     expected_value: ?[]const u8,
-    actual: ?AttributeListIterator.Entry,
+    actual: ?AssignationIterator.Entry,
 ) !void {
     const entry = actual orelse return error.TestExpectedEntry;
     try std.testing.expectEqualStrings(expected_name, entry.name);
@@ -77,10 +81,10 @@ fn expectEntry(
     }
 }
 
-test AttributeListIterator {
+test AssignationIterator {
     const env_var = "foo=bar,bar=baz,,toto=tata,";
 
-    var it: AttributeListIterator = .init(env_var);
+    var it: AssignationIterator = .init(env_var);
     try expectEntry("foo", "bar", it.next());
     try expectEntry("bar", "baz", it.next());
     try expectEntry("toto", "tata", it.next());
@@ -90,7 +94,7 @@ test AttributeListIterator {
 }
 
 test "values may be empty or contain the assignator" {
-    var it: AttributeListIterator = .init("empty=,equation=a=b+c");
+    var it: AssignationIterator = .init("empty=,equation=a=b+c");
 
     try expectEntry("empty", "", it.next());
     try expectEntry("equation", "a=b+c", it.next());
@@ -98,7 +102,7 @@ test "values may be empty or contain the assignator" {
 }
 
 test "iterating to exhaustion" {
-    var it: AttributeListIterator = .init("a=1,b=2,c=3");
+    var it: AssignationIterator = .init("a=1,b=2,c=3");
 
     var count: usize = 0;
     while (it.next()) |entry| : (count += 1) {
@@ -109,7 +113,7 @@ test "iterating to exhaustion" {
 }
 
 test "surrounding whitespace is trimmed" {
-    var it: AttributeListIterator = .init(" foo = bar ,\tbar\t=\tbaz\t,  novalue  ");
+    var it: AssignationIterator = .init(" foo = bar ,\tbar\t=\tbaz\t,  novalue  ");
 
     try expectEntry("foo", "bar", it.next());
     try expectEntry("bar", "baz", it.next());
@@ -118,7 +122,7 @@ test "surrounding whitespace is trimmed" {
 }
 
 test "malformed entries are reported, not skipped" {
-    var it: AttributeListIterator = .init("novalue,=orphan,foo=bar");
+    var it: AssignationIterator = .init("novalue,=orphan,foo=bar");
 
     // A missing assignator is distinguishable from an empty value.
     try expectEntry("novalue", null, it.next());
@@ -130,13 +134,13 @@ test "malformed entries are reported, not skipped" {
 
 test "blank input yields nothing" {
     for ([_][]const u8{ "", ",", " , ", " ,\t,\n" }) |input| {
-        var it: AttributeListIterator = .init(input);
+        var it: AssignationIterator = .init(input);
         try std.testing.expectEqual(null, it.next());
     }
 }
 
 test "reset rewinds the iterator" {
-    var it: AttributeListIterator = .init("foo=bar,bar=baz");
+    var it: AssignationIterator = .init("foo=bar,bar=baz");
 
     while (it.next()) |_| {}
     try std.testing.expectEqual(null, it.next());
