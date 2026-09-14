@@ -8,16 +8,10 @@ const AssignationIterator = @import("assignation.zig").AssignationIterator;
 pub fn buildFromConfig(allocator: std.mem.Allocator, config: *const Configuration) ![]Attribute {
     const has_service_name = config.service_name != null;
 
-    // Both sources below append at most one attribute per entry, and a
-    // comma-separated list holds at most one more entry than it has commas.
-    // Reserving that many up front makes the appends infallible, so a duped
-    // attribute can never be orphaned between `Attribute.dupe` and the append.
-    var max_attributes: usize = @intFromBool(has_service_name);
-    if (config.resource_attributes) |resource_attrs| {
-        max_attributes += std.mem.countScalar(u8, resource_attrs, ',') + 1;
-    }
-
-    var attributes: std.ArrayList(Attribute) = try .initCapacity(allocator, max_attributes);
+    // `parseResourceAttributes` reserves its own capacity, so this only covers
+    // the service.name entry below: its append then cannot fail and orphan a
+    // duped attribute.
+    var attributes: std.ArrayList(Attribute) = try .initCapacity(allocator, @intFromBool(has_service_name));
     errdefer {
         for (attributes.items) |attr| {
             allocator.free(attr.key);
@@ -48,13 +42,17 @@ pub fn buildFromConfig(allocator: std.mem.Allocator, config: *const Configuratio
 /// Parse resource attributes from comma-separated key=value pairs
 /// Format: "key1=value1,key2=value2"
 /// If skip_service_name is true, service.name entries will be skipped (OTEL_SERVICE_NAME takes precedence)
-/// `attributes` must already have capacity for one entry per item in `attrs_str`.
 fn parseResourceAttributes(
     allocator: std.mem.Allocator,
     attrs_str: []const u8,
     attributes: *std.ArrayList(Attribute),
     skip_service_name: bool,
 ) !void {
+    // At most one attribute per entry, and a comma-separated list holds at most
+    // one more entry than it has commas. Reserving up front makes the appends
+    // below infallible, so a duped attribute is never orphaned mid-append.
+    try attributes.ensureUnusedCapacity(allocator, std.mem.countScalar(u8, attrs_str, ',') + 1);
+
     var iter: AssignationIterator = .init(attrs_str);
     while (iter.next()) |entry| {
         const value = entry.value orelse {
