@@ -1,7 +1,7 @@
 const std = @import("std");
 const Attribute = @import("../attributes.zig").Attribute;
 const Configuration = @import("config.zig").Configuration;
-const AssignationIterator = @import("assignation.zig").AssignationIterator;
+const AssignmentIterator = @import("assignment.zig").AssignmentIterator;
 
 /// Build resource attributes from configuration
 /// Combines OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
@@ -53,7 +53,7 @@ fn parseResourceAttributes(
     // below infallible, so a duped attribute is never orphaned mid-append.
     try attributes.ensureUnusedCapacity(allocator, std.mem.countScalar(u8, attrs_str, ',') + 1);
 
-    var iter: AssignationIterator = .init(attrs_str);
+    var iter: AssignmentIterator = .init(attrs_str);
     while (iter.next()) |entry| {
         const value = entry.value orelse {
             std.log.warn("Invalid resource attribute (missing '='): {s}", .{entry.name});

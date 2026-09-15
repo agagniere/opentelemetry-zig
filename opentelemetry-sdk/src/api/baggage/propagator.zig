@@ -22,7 +22,7 @@ const std = @import("std");
 const EnvMap = std.process.Environ.Map;
 const Baggage = @import("../baggage.zig").Baggage;
 const BaggageEntry = @import("../baggage.zig").BaggageEntry;
-const AssignationIterator = @import("../../sdk/assignation.zig").AssignationIterator;
+const AssignmentIterator = @import("../../sdk/assignment.zig").AssignmentIterator;
 
 /// Generic interface for getting values from a carrier.
 ///
@@ -200,12 +200,12 @@ pub fn extract(
     var baggage = Baggage.init();
     errdefer baggage.deinit();
 
-    // A baggage header is a list of assignations whose values carry an optional
+    // A baggage header is a list of assignments whose values carry an optional
     // `;metadata` tail. Neither a key nor a value may hold a raw `,` or `;`.
-    var entries: AssignationIterator = .init(header_value);
+    var entries: AssignmentIterator = .init(header_value);
     while (entries.next()) |entry| {
         // Empty key or value is skipped
-        // A `;` in the key means the member never began with an assignation => empty key
+        // A `;` in the key means the member never began with an assignment => empty key
         if (entry.name.len == 0 or std.mem.indexOfScalar(u8, entry.name, ';') != null or entry.value == null) continue;
 
         var parts = std.mem.splitScalar(u8, entry.value orelse unreachable, ';');
@@ -575,7 +575,7 @@ test "extract skips a member with an empty value" {
     try std.testing.expectEqualStrings("value", extracted.getValue("key").?.value);
 }
 
-test "extract skips a member that does not begin with an assignation" {
+test "extract skips a member that does not begin with an assignment" {
     const allocator = std.testing.allocator;
 
     var headers = std.StringHashMap([]const u8).init(allocator);
