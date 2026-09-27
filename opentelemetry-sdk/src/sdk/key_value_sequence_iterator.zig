@@ -1,22 +1,22 @@
 const std = @import("std");
 
-/// Iterator over `name<assignator>value` pairs joined by `separator`,
-/// e.g. `key1=value1,key2=value2` for `Iterator(',', '=')`.
+/// Iterator over `name<kv_separator>value` pairs joined by `separator`,
+/// e.g. `key1=value1,key2=value2` for `KeyValueSequenceIterator(',', '=')`.
 ///
 /// Names and values are trimmed of surrounding ASCII whitespace. Blank entries
 /// are skipped, but malformed ones are still reported so that callers can warn
-/// about them: an entry with no assignator yields a null `value`, and an entry
-/// such as `=orphan` yields an empty `name`.
+/// about them: an entry with no `kv_separator` yields a null `value`, and an
+/// entry starting with `kv_separator` yields an empty `name`.
 ///
-/// The *first* assignator separates the name from the value, so a value may
-/// contain further assignators (`a=b=c` yields `a` / `b=c`).
+/// The *first* `kv_separator` separates the name from the value, so a value
+/// may contain further ones (`a=b=c` yields `a` / `b=c`).
 ///
 /// The iterator borrows the buffer passed to `init`; the returned slices point
 /// into it and are valid for as long as it is.
 ///
 /// A list of plain values rather than assignments needs none of this: reach for
 /// `std.mem.tokenizeScalar` with a `std.mem.trim` per item instead.
-pub fn Iterator(comptime separator: u8, comptime assignator: u8) type {
+pub fn KeyValueSequenceIterator(comptime separator: u8, comptime kv_separator: u8) type {
     return struct {
         // tokenizeScalar (rather than splitScalar) already skips empty entries,
         // which covers `a=b,,c=d` and a trailing separator.
@@ -24,10 +24,10 @@ pub fn Iterator(comptime separator: u8, comptime assignator: u8) type {
 
         const Self = @This();
 
-        /// A single `name<assignator>value` pair.
+        /// A single `name<kv_separator>value` pair.
         pub const Entry = struct {
             name: []const u8,
-            /// Null when the entry carries no assignator at all, as opposed to
+            /// Null when the entry carries no `kv_separator` at all, as opposed to
             /// an empty slice for an entry such as `name=`.
             value: ?[]const u8,
         };
@@ -43,7 +43,7 @@ pub fn Iterator(comptime separator: u8, comptime assignator: u8) type {
                 // A whitespace-only entry has nothing worth reporting.
                 if (entry.len == 0) continue;
 
-                const index = std.mem.indexOfScalar(u8, entry, assignator) orelse {
+                const index = std.mem.indexOfScalar(u8, entry, kv_separator) orelse {
                     return .{ .name = entry, .value = null };
                 };
                 return .{ .name = trim(entry[0..index]), .value = trim(entry[index + 1 ..]) };
@@ -65,12 +65,12 @@ pub fn Iterator(comptime separator: u8, comptime assignator: u8) type {
 /// Iterator over comma-separated `name=value` pairs, the shape taken by most
 /// OTel environment variables that carry assignments: `OTEL_RESOURCE_ATTRIBUTES`,
 /// `OTEL_EXPORTER_OTLP_HEADERS`, W3C `tracestate` and `baggage` entries.
-pub const AssignmentIterator = Iterator(',', '=');
+pub const CommaSeparatedAssignmentIterator = KeyValueSequenceIterator(',', '=');
 
 fn expectEntry(
     expected_name: []const u8,
     expected_value: ?[]const u8,
-    actual: ?AssignmentIterator.Entry,
+    actual: ?CommaSeparatedAssignmentIterator.Entry,
 ) !void {
     const entry = actual orelse return error.TestExpectedEntry;
     try std.testing.expectEqualStrings(expected_name, entry.name);
@@ -81,10 +81,10 @@ fn expectEntry(
     }
 }
 
-test AssignmentIterator {
+test CommaSeparatedAssignmentIterator {
     const env_var = "foo=bar,bar=baz,,toto=tata,";
 
-    var it: AssignmentIterator = .init(env_var);
+    var it: CommaSeparatedAssignmentIterator = .init(env_var);
     try expectEntry("foo", "bar", it.next());
     try expectEntry("bar", "baz", it.next());
     try expectEntry("toto", "tata", it.next());
@@ -93,8 +93,8 @@ test AssignmentIterator {
     try std.testing.expectEqual(null, it.next());
 }
 
-test "values may be empty or contain the assignator" {
-    var it: AssignmentIterator = .init("empty=,equation=a=b+c");
+test "values may be empty or contain the kv_separator" {
+    var it: CommaSeparatedAssignmentIterator = .init("empty=,equation=a=b+c");
 
     try expectEntry("empty", "", it.next());
     try expectEntry("equation", "a=b+c", it.next());
@@ -102,7 +102,7 @@ test "values may be empty or contain the assignator" {
 }
 
 test "iterating to exhaustion" {
-    var it: AssignmentIterator = .init("a=1,b=2,c=3");
+    var it: CommaSeparatedAssignmentIterator = .init("a=1,b=2,c=3");
 
     var count: usize = 0;
     while (it.next()) |entry| : (count += 1) {
@@ -113,7 +113,7 @@ test "iterating to exhaustion" {
 }
 
 test "surrounding whitespace is trimmed" {
-    var it: AssignmentIterator = .init(" foo = bar ,\tbar\t=\tbaz\t,  novalue  ");
+    var it: CommaSeparatedAssignmentIterator = .init(" foo = bar ,\tbar\t=\tbaz\t,  novalue  ");
 
     try expectEntry("foo", "bar", it.next());
     try expectEntry("bar", "baz", it.next());
@@ -122,9 +122,9 @@ test "surrounding whitespace is trimmed" {
 }
 
 test "malformed entries are reported, not skipped" {
-    var it: AssignmentIterator = .init("novalue,=orphan,foo=bar");
+    var it: CommaSeparatedAssignmentIterator = .init("novalue,=orphan,foo=bar");
 
-    // A missing assignator is distinguishable from an empty value.
+    // A missing kv_separator is distinguishable from an empty value.
     try expectEntry("novalue", null, it.next());
     try expectEntry("", "orphan", it.next());
     // Iteration carries on past them.
@@ -134,13 +134,13 @@ test "malformed entries are reported, not skipped" {
 
 test "blank input yields nothing" {
     for ([_][]const u8{ "", ",", " , ", " ,\t,\n" }) |input| {
-        var it: AssignmentIterator = .init(input);
+        var it: CommaSeparatedAssignmentIterator = .init(input);
         try std.testing.expectEqual(null, it.next());
     }
 }
 
 test "reset rewinds the iterator" {
-    var it: AssignmentIterator = .init("foo=bar,bar=baz");
+    var it: CommaSeparatedAssignmentIterator = .init("foo=bar,bar=baz");
 
     while (it.next()) |_| {}
     try std.testing.expectEqual(null, it.next());

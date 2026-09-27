@@ -22,7 +22,7 @@ const std = @import("std");
 const EnvMap = std.process.Environ.Map;
 const Baggage = @import("../baggage.zig").Baggage;
 const BaggageEntry = @import("../baggage.zig").BaggageEntry;
-const AssignmentIterator = @import("../../sdk/assignment.zig").AssignmentIterator;
+const CommaSeparatedAssignmentIterator = @import("../../sdk/key_value_sequence_iterator.zig").CommaSeparatedAssignmentIterator;
 
 /// Generic interface for getting values from a carrier.
 ///
@@ -202,7 +202,7 @@ pub fn extract(
 
     // A baggage header is a list of assignments whose values carry an optional
     // `;metadata` tail. Neither a key nor a value may hold a raw `,` or `;`.
-    var entries: AssignmentIterator = .init(header_value);
+    var entries: CommaSeparatedAssignmentIterator = .init(header_value);
     while (entries.next()) |entry| {
         // Empty key or value is skipped
         // A `;` in the key means the member never began with an assignment => empty key

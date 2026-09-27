@@ -8,7 +8,7 @@
 
 const std = @import("std");
 
-const AssignmentIterator = @import("assignment.zig").AssignmentIterator;
+const CommaSeparatedAssignmentIterator = @import("key_value_sequence_iterator.zig").CommaSeparatedAssignmentIterator;
 
 const EnvMap = std.process.Environ.Map;
 
@@ -374,7 +374,7 @@ fn resolveServiceName(allocator: std.mem.Allocator, io: std.Io, env_map: *const 
 
 /// Extract the service.name value from OTEL_RESOURCE_ATTRIBUTES, if present.
 fn serviceNameFromResourceAttributes(attrs: []const u8) ?[]const u8 {
-    var iter: AssignmentIterator = .init(attrs);
+    var iter: CommaSeparatedAssignmentIterator = .init(attrs);
     while (iter.next()) |entry| {
         if (!std.mem.eql(u8, entry.name, "service.name")) continue;
         // A bare `service.name` with no value does not count; keep looking.
