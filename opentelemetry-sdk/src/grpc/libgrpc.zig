@@ -65,8 +65,8 @@ pub fn send(
                 error.Unavailable,
                 error.DataLoss,
                 // RESOURCE_EXHAUSTED is retryable only when the server signals
-                // it via RetryInfo; we don't parse trailers, so treat as retryable.
-                error.ResourceExhausted,
+                // it via RetryInfo; we don't parse trailers, so treat as nonretryable.
+                // error.ResourceExhausted,
                 => error.RetryableStatusCodeInResponse,
                 else => error.NonRetryableStatusCodeInResponse,
             };
@@ -129,7 +129,7 @@ fn makeSSLCredentials(arena: Allocator, io: std.Io, config: Configuration) !grpc
     if (config.server_root_certificates_filename) |filename|
         root_certs = try readFile(arena, io, filename);
     if ((config.client_certificate_filename == null) != (config.client_private_key_filename == null))
-        log.warn("Inconsistent configuration of the client key and certificate, either provide both or neither", .{});
+        return error.IncompleteClientCertificateConfiguration;
     if (config.client_certificate_filename) |cert_filename| {
         if (config.client_private_key_filename) |key_filename| {
             client_key_cert = try arena.create(grpc.SSLKeyCertPair);
