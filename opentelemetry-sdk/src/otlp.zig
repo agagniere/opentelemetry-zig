@@ -313,6 +313,7 @@ pub const ConfigOptions = struct {
             const Scheme = @FieldType(ConfigOptions, "scheme");
             self.scheme = std.meta.stringToEnum(Scheme, lower) orelse return ConfigError.InvalidScheme;
             value = raw[uri.scheme.len + "://".len ..];
+            self.insecure = self.scheme == .https;
         }
         while (value.len > 0 and value[value.len - 1] == '/') {
             value = value[0 .. value.len - 1];
