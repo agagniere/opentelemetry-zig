@@ -30,8 +30,8 @@
         // Consumed by the vendored opentelemetry-proto module (see
         // build/proto/build.zig) and, transitively, by the SDK.
         .protobuf = .{
-            .url = "git+https://github.com/Arwalk/zig-protobuf?ref=zig-master#9eb9912ae609147e5a3c3e8915ae048dc9398294",
-            .hash = "protobuf-5.0.0-0e82aitNKACdM38Q5mbHhtsB_4aar09scp05zAOKV-Ao",
+            .url = "git+https://github.com/agagniere/zig-protobuf?ref=zig-master#42a6dcbe93b90f588097839cac52b51f6f9f926d",
+            .hash = "protobuf-7.0.0-0e82alxiNADvVbtIJJRIViGikHI2CP5X7oygf2mjvimJ",
         },
         // Upstream .proto definitions, used only to regenerate the vendored
         // bindings (zig build proto-generate -Dproto-src). Lazy so plain builds
