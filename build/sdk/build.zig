@@ -59,6 +59,7 @@ fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !?
     try dependencies.put("clock", clock_mod);
 
     const grpc_provider = b.option(GrpcProvider, "grpc-provider", "Which gRPC implementation to use, if any") orelse .none;
+    const grpc_link_mode = b.option(std.builtin.LinkMode, "grpc-link-mode", "Link libgrpc statically or dynamically, with -Dgrpc-provider=libgrpc");
 
     // The selected gRPC backend is exposed to the SDK as the `grpc_transport`
     // module. Every backend's entry file lives under `opentelemetry-sdk/src/grpc/`
@@ -74,6 +75,7 @@ fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !?
             const cgrpc_dep = b.lazyDependency("cgrpc_wrapper", .{
                 .target = info.target,
                 .optimize = info.optimize,
+                .link_mode = grpc_link_mode,
             }) orelse return null;
 
             break :blk b.createModule(.{

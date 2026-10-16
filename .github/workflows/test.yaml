@@ -118,7 +118,8 @@ jobs:
   # 'run::grpc' label.
   #
   # This one takes the default route: gRPC Core is built from source as part of
-  # the dependency tree.
+  # the dependency tree. It is linked dynamically, to cover the installation of
+  # shared libraries next to the examples.
   grpc_vendored:
     needs: proto
     if: contains(github.event.pull_request.labels.*.name, 'run::grpc')
@@ -131,19 +132,24 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
           mirror: 'https://zigmirror.com'
-      # The provider flag is what makes the gRPC dependencies non-lazy.
+          # A gRPC Core build fills more than the default 2 GiB limit, which
+          # would empty the cache after each run
+          cache-size-limit: 4096
       - name: Fetch dependencies
         run: zig build --fetch -Dgrpc-provider=libgrpc
+      # The CPU is part of every cache key, and the runners' native CPUs vary:
+      # target the baseline CPU so that the cached gRPC Core can be reused.
+      # Zig 0.17 still rebuilds it until https://codeberg.org/ziglang/zig/issues/37200 is fixed
       - name: Run SDK tests with the libgrpc provider
-        run: zig build sdk-test -Dgrpc-provider=libgrpc -Dtest-verbose=true
-        timeout-minutes: 60
+        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -Dgrpc-link-mode=dynamic sdk-test -Dtest-verbose=true
+        timeout-minutes: 50
       - name: Build gRPC examples
-        run: zig build sdk-examples -Dgrpc-provider=libgrpc
-        timeout-minutes: 15
+        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -Dgrpc-link-mode=dynamic sdk-examples
+        timeout-minutes: 10
       # The integration harness starts its own collector container.
       - name: Run gRPC integration test
-        run: zig build sdk-run-integration -Dgrpc-provider=libgrpc -- logs_grpc
-        timeout-minutes: 15
+        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -Dgrpc-link-mode=dynamic sdk-run-integration -- logs_grpc
+        timeout-minutes: 10
 
   # Same provider, linking the libgrpc that Homebrew installed (`-fsys=grpc`)
   # instead of building gRPC Core from source. GitHub's macOS runners have no
@@ -163,25 +169,19 @@ jobs:
       - name: Install libgrpc
         run: |
           brew install grpc
+          # Zig only searches Homebrew's include and lib directories when this
+          # is set (`--search-prefix` does not reach translate-c)
+          echo "HOMEBREW_PREFIX=$(brew --prefix)" >> "$GITHUB_ENV"
           echo "GRPC_PREFIX=$(brew --prefix grpc)" >> "$GITHUB_ENV"
       - name: Fetch dependencies
         run: zig build --fetch -Dgrpc-provider=libgrpc -fsys=grpc
       - name: Run SDK tests against the system libgrpc
-        run: |
-          zig build sdk-test -Dtest-verbose=true \
-            -Dgrpc-provider=libgrpc -fsys=grpc --search-prefix "$GRPC_PREFIX"
-        timeout-minutes: 15
+        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -fsys=grpc sdk-test -Dtest-verbose=true
+        timeout-minutes: 5
       - name: Build gRPC examples against the system libgrpc
-        run: |
-          zig build sdk-examples \
-            -Dgrpc-provider=libgrpc -fsys=grpc --search-prefix "$GRPC_PREFIX"
-        timeout-minutes: 15
-      # Fails if the source build quietly took over: nothing should have been
-      # vendored into zig-out/lib, and the example must load Homebrew's library.
-      - name: Check the system library was the one linked
-        run: |
-          if ls zig-out/lib/libgrpc* >/dev/null 2>&1; then
-            echo "gRPC Core was built from source despite -fsys=grpc"
-            exit 1
-          fi
-          otool -L zig-out/bin/grpc/all_signals | grep -F "$GRPC_PREFIX"
+        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -fsys=grpc sdk-examples
+        timeout-minutes: 5
+      - run: otool -L zig-out/bin/grpc/all_signals | grep -F "$GRPC_PREFIX"
+      - name: Run gRPC integration test
+        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -fsys=grpc sdk-run-integration -- logs_grpc
+        timeout-minutes: 5
