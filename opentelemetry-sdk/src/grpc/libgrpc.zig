@@ -32,7 +32,7 @@ pub fn send(
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
 
-    const endpoint: [:0]u8 = try arena.dupeZ(u8, config.endpoint);
+    const endpoint: [:0]u8 = try arena.dupeSentinel(u8, config.endpoint, 0);
 
     var credentials: grpc.client.Credentials = try makeCredentials(arena, io, config);
     defer credentials.deinit();

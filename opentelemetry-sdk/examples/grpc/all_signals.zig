@@ -135,7 +135,7 @@ pub fn main(init: std.process.Init) !void {
         });
 
         span.setStatus(sdk.api.trace.Status.ok());
-        tracer.endSpan(&span);
+        span.end(null);
 
         var trace_buf: [32]u8 = undefined;
         var span_buf: [16]u8 = undefined;
