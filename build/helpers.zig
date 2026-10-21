@@ -81,7 +81,8 @@ pub fn wireExample(
 // at that directory relative to itself: Zig builds those libraries in the
 // cache and only records an rpath relative to the build root, which is enough
 // for `zig build run` but leaves the installed binary unable to load them from
-// any other working directory.
+// any other working directory. libgrpc does add `<executable>/../lib`, but
+// examples are installed one level deeper, in zig-out/bin/<dir>/.
 //
 // Only libraries built as part of this graph are walked, so a library taken
 // from the system instead (`-fsys=<name>`) is left to the loader, which knows

@@ -78,6 +78,13 @@ fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !?
                 .link_mode = grpc_link_mode,
             }) orelse return null;
 
+            // Dependents look libgrpc up through this package to install it
+            // when dynamic, and `Dependency.artifact()` only finds installed
+            // artifacts: install it whatever the linking mode. With
+            // `-fsys=grpc` there is no artifact to install.
+            if (!b.systemIntegrationOption("grpc", .{}))
+                b.installArtifact(cgrpc_dep.artifact("grpc"));
+
             break :blk b.createModule(.{
                 .root_source_file = b.path(sdk_root ++ "/src/grpc/libgrpc.zig"),
                 .target = info.target,

@@ -131,28 +131,43 @@ program exporting all three signals over gRPC.
 #### Building against libgrpc
 
 gRPC Core is built from source by default. It is a large C++ project, so expect a
-slow first build and a shared library that the executable loads at runtime. Two
-consequences are worth knowing about:
+slow first build. It is linked statically, producing self-contained executables,
+at the cost of slower links and much larger binaries. Two alternatives:
 
-- **Moving the binary.** Zig records an rpath into the build cache, which only
-  resolves relative to the build root, so an installed binary run from anywhere else
-  aborts with `Library not loaded: @rpath/libgrpc.dylib`. Install the shared library
-  alongside the executable and add an rpath relative to the executable itself; this
-  repository does that for its own examples in
+- **Linking it dynamically.** `.@"grpc-link-mode" = .dynamic` builds a shared
+  library that the executable loads at runtime, making links much faster: in Debug
+  on macOS, `all_signals` drops from 314 MB to under 8 MB, and linking it from about
+  2.7 GB of RAM to 0.7 GB. The executable looks for libgrpc in `../lib` relative to
+  itself, matching the default install layout, so install the shared library along
+  with it:
+
+  ```zig
+  if (!b.systemIntegrationOption("grpc", .{})) {
+      const libgrpc = otel.artifact("grpc");
+      if (libgrpc.isDynamicLibrary())
+          b.installArtifact(libgrpc);
+  }
+  ```
+
+  Without it, libgrpc is only found through an rpath into the build cache: enough
+  for `zig build run`, but an installed binary run from another directory aborts
+  with `Library not loaded: @rpath/libgrpc.dylib`. Binaries installed outside
+  `bin/` need an rpath of their own, as this repository's examples get in
   [build/helpers.zig](../build/helpers.zig).
 - **Using the system libgrpc instead.** `-fsys=grpc` links the libgrpc already
   installed on the machine and skips the source build altogether. The system library
-  carries an absolute install name, so the rpath caveat above does not apply:
+  carries an absolute install name, so the rpath caveat above does not apply. On
+  macOS, Zig only searches Homebrew's directories when `HOMEBREW_PREFIX` is set
+  (as `brew shellenv` does):
 
   ```bash
-  zig build sdk-examples -Dgrpc-provider=libgrpc -fsys=grpc \
-      --search-prefix "$(brew --prefix grpc)"
+  HOMEBREW_PREFIX="$(brew --prefix)" zig build sdk-examples -Dgrpc-provider=libgrpc -fsys=grpc
   ```
 
   This needs a libgrpc recent enough to ship `<grpc/credentials.h>`: Homebrew's
   1.83 qualifies, while Debian and Ubuntu's `libgrpc-dev` (1.51.1) is too old.
 
-Inside this repository the option applies to every SDK step, so the examples and the
+Inside this repository `-Dgrpc-provider` applies to every SDK step, so the examples and the
 integration tests can be exercised with a local collector:
 
 ```bash
