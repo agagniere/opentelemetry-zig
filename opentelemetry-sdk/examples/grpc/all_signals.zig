@@ -31,7 +31,8 @@ pub fn main(init: std.process.Init) !void {
 
     config.protocol = .grpc;
     // Switch to the gRPC port unless the user already set OTEL_EXPORTER_OTLP_ENDPOINT.
-    if (std.mem.eql(u8, config.endpoint, "localhost:4318")) {
+    // The default endpoint is not allocated, so it can be replaced.
+    if (init.environ_map.get("OTEL_EXPORTER_OTLP_ENDPOINT") == null) {
         config.endpoint = "localhost:4317";
     }
 
@@ -65,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
         .Random = sdk.trace.RandomIDGenerator.init(prng.random()),
     };
     var tracer_provider = try sdk.trace.TracerProvider.init(allocator, io, id_generator);
-    defer tracer_provider.shutdown();
+    defer tracer_provider.deinit();
     var trace_exporter = try sdk.trace.OTLPExporter.init(allocator, io, config);
     defer trace_exporter.deinit();
     var span_processor = sdk.trace.SimpleProcessor.init(

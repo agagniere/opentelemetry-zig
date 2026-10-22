@@ -6,7 +6,7 @@
 //! without forcing them to know about the gRPC backend.
 //!
 //! Run with:
-//!   zig build sdk-run-integration -Dgrpc-provider=libgrpc -- logs_grpc
+//!   zig build sdk-run-integration -Dgrpc-provider=libgrpc -Dintegration-filter=logs_grpc
 
 const std = @import("std");
 const clock = @import("clock");

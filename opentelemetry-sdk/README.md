@@ -120,7 +120,8 @@ var config = try sdk.otlp.ConfigOptions.init(allocator, env_map);
 defer config.deinit();
 
 config.protocol = .grpc;
-config.endpoint = "localhost:4317";
+// Unless set from OTEL_EXPORTER_OTLP_ENDPOINT, the endpoint is not allocated and can be replaced
+if (env_map.get("OTEL_EXPORTER_OTLP_ENDPOINT") == null) config.endpoint = "localhost:4317";
 ```
 
 `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` and `OTEL_EXPORTER_OTLP_ENDPOINT=<host:port>`
@@ -167,12 +168,18 @@ at the cost of slower links and much larger binaries. Two alternatives:
   This needs a libgrpc recent enough to ship `<grpc/credentials.h>`: Homebrew's
   1.83 qualifies, while Debian and Ubuntu's `libgrpc-dev` (1.51.1) is too old.
 
-Inside this repository `-Dgrpc-provider` applies to every SDK step, so the examples and the
-integration tests can be exercised with a local collector:
+Inside this repository `-Dgrpc-provider` applies to every SDK step. The examples
+export to a collector started separately:
 
 ```bash
 docker run --rm -p 4317:4317 otel/opentelemetry-collector
 zig build sdk-run-examples -Dgrpc-provider=libgrpc -Dexamples-filter=all_signals
+```
+
+The integration tests start their own collector container on the same ports, so
+stop the one above first:
+
+```bash
 zig build sdk-run-integration -Dgrpc-provider=libgrpc -Dintegration-filter=logs_grpc
 ```
 
