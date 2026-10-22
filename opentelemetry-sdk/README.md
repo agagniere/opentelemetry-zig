@@ -173,7 +173,7 @@ integration tests can be exercised with a local collector:
 ```bash
 docker run --rm -p 4317:4317 otel/opentelemetry-collector
 zig build sdk-run-examples -Dgrpc-provider=libgrpc -Dexamples-filter=all_signals
-zig build sdk-run-integration -Dgrpc-provider=libgrpc -- logs_grpc
+zig build sdk-run-integration -Dgrpc-provider=libgrpc -Dintegration-filter=logs_grpc
 ```
 
 ## C Language Bindings

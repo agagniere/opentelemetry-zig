@@ -45,7 +45,7 @@ OTLP/gRPC fails with `UnimplementedTransportProtocol`. Tests of that transport
 and exercise the transport when a backend is selected:
 
 ```bash
-zig build sdk-run-integration -Dgrpc-provider=libgrpc -- logs_grpc
+zig build sdk-run-integration -Dgrpc-provider=libgrpc -Dintegration-filter=logs_grpc
 ```
 
 ## What the Tests Do

@@ -148,12 +148,12 @@ jobs:
         timeout-minutes: 10
       # The integration harness starts its own collector container.
       - name: Run gRPC integration test
-        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -Dgrpc-link-mode=dynamic sdk-run-integration -- logs_grpc
+        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -Dgrpc-link-mode=dynamic sdk-run-integration -Dintegration-filter=logs_grpc
         timeout-minutes: 10
 
   # Same provider, linking the libgrpc that Homebrew installed (`-fsys=grpc`)
   # instead of building gRPC Core from source. GitHub's macOS runners have no
-  # Docker daemon, so this job stops short of the integration tests.
+  # Docker daemon, so this job builds the integration test without running it.
   grpc_system:
     needs: proto
     if: contains(github.event.pull_request.labels.*.name, 'run::grpc')
@@ -182,6 +182,7 @@ jobs:
         run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -fsys=grpc sdk-examples
         timeout-minutes: 5
       - run: otool -L zig-out/bin/grpc/all_signals | grep -F "$GRPC_PREFIX"
-      - name: Run gRPC integration test
-        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -fsys=grpc sdk-run-integration -- logs_grpc
+      # Docker is unavailable here: only build the integration test
+      - name: Build gRPC integration test against the system libgrpc
+        run: zig build -Dcpu=baseline --summary new -Dgrpc-provider=libgrpc -fsys=grpc sdk-integration -Dintegration-filter=logs_grpc
         timeout-minutes: 5
