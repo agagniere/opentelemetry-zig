@@ -42,6 +42,9 @@ pub fn send(
 
     var queue: grpc.PluckQueue = .init();
     defer queue.deinit();
+    // TODO: drain the queue until its shutdown event before destroying it, as
+    // gRPC requires. No event is left pending by then: `rawUnaryCall` waits for
+    // its batch to complete, cancelling the call on timeout.
     defer queue.shutdown();
 
     const deadline: grpc.Deadline = .{ .duration = .fromSeconds(@intCast(config.timeout_sec)) };
