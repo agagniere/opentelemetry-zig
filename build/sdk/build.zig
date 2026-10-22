@@ -17,10 +17,7 @@ pub fn Setup(
     info: CompilationInfo,
     dependencies: *BuildModules,
 ) !void {
-    // Null on the first pass when the selected gRPC backend is a lazy
-    // dependency that still needs fetching: Zig fetches it and re-runs the
-    // build, so there is nothing left to set up in this pass.
-    const grpc = try modules(b, info, dependencies) orelse return;
+    const grpc = try modules(b, info, dependencies);
 
     const sdk_lib = b.addLibrary(.{
         .name = "opentelemetry-sdk",
@@ -46,10 +43,8 @@ pub fn Setup(
     docs_step.dependOn(&sdk_lib.step);
 }
 
-// Returns the selected gRPC backend, or null when a lazy dependency it needs
-// is not fetched yet; the caller must then stop configuring, letting Zig fetch
-// it and re-run the build.
-fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !?GrpcProvider {
+// Returns the selected gRPC backend.
+fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !GrpcProvider {
     const clock_mod = b.createModule(.{
         .root_source_file = b.path(sdk_root ++ "/src/clock.zig"),
         .target = info.target,
@@ -71,12 +66,15 @@ fn modules(b: *std.Build, info: CompilationInfo, dependencies: *BuildModules) !?
             .optimize = info.optimize,
         }),
         .libgrpc => blk: {
-            // Null on the first pass: Zig fetches the lazy dep and re-runs the build.
-            const cgrpc_dep = b.lazyDependency("cgrpc_wrapper", .{
+            // A lazy dependency: if it is not fetched yet, this stops the
+            // configuration right away, and Zig fetches it and starts over.
+            // Returning early instead would leave the options and modules
+            // declared after this point missing from that first pass.
+            const cgrpc_dep = b.dependency("cgrpc_wrapper", .{
                 .target = info.target,
                 .optimize = info.optimize,
                 .link_mode = grpc_link_mode,
-            }) orelse return null;
+            });
 
             // Dependents look libgrpc up through this package to install it
             // when dynamic, and `Dependency.artifact()` only finds installed
