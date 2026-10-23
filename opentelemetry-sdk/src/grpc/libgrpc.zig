@@ -47,8 +47,14 @@ pub fn send(
     // its batch to complete, cancelling the call on timeout.
     defer queue.shutdown();
 
+    const metadata = try arena.alloc(grpc.client.Metadata, config.headers.len);
+    for (metadata, config.headers) |*m, header| m.* = .{
+        .key = try std.ascii.allocLowerString(arena, header.name),
+        .value = header.value,
+    };
+
     const deadline: grpc.Deadline = .{ .duration = .fromSeconds(@intCast(config.timeout_sec)) };
-    switch (try grpc.client.rawUnaryCall(gpa, &channel, &queue, path, data, deadline)) {
+    switch (try grpc.client.rawUnaryCall(gpa, &channel, &queue, path, data, .{ .deadline = deadline, .metadata = metadata })) {
         // TODO: handle partial success.
         // See https://opentelemetry.io/docs/specs/otlp/#partial-success
         .success => |bytes| if (bytes) |b| gpa.free(b),

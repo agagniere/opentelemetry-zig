@@ -51,6 +51,9 @@ fn testLogsOverGrpc(
     // dev setups will hit.
     config.protocol = .grpc;
     config.endpoint = "localhost:" ++ common.COLLECTOR_GRPC_PORT;
+    // Not checked by the collector: this only ensures headers don't break the export,
+    // gRPC refusing uppercase metadata keys unless the transport lowercases them
+    config.headers = "X-Integration-Test=logs_grpc";
 
     var otlp_exporter = try logs_sdk.OTLPExporter.init(allocator, io, config);
     defer otlp_exporter.deinit();

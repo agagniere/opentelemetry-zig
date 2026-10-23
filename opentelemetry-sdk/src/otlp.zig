@@ -260,7 +260,7 @@ pub const ConfigOptions = struct {
 
     /// Comma-separated list of key=value pairs to include in the request as headers.
     /// Format "key1=value1,key2=value2,...".
-    /// They wll be parsed into HTTP headers and all the values will be treated as strings.
+    /// They wll be parsed into HTTP headers, or gRPC metadata, and all the values will be treated as strings.
     headers: ?[]const u8 = null,
 
     tls_opts: ?TLSOptions = null,
@@ -1029,11 +1029,14 @@ pub fn Export(
         },
         .grpc => blk: {
             const target = try config.grpcEndpointForSignal(otlp_payload.signal());
+            const headers: []const std.http.Header = if (config.headers) |h| try parseHeaders(allocator, h) else &.{};
+            defer allocator.free(headers);
 
             break :blk grpc_transport.send(allocator, io, otlp_payload.signal().grpcPath(), payload, .{
                 .endpoint = target.endpoint,
                 .insecure = target.insecure,
                 .timeout_sec = config.timeout_sec,
+                .headers = headers,
                 .server_root_certificates_filename = if (config.tls_opts) |tls| tls.certificate_file else null,
                 .client_certificate_filename = if (config.tls_opts) |tls| tls.client_certificate_file else null,
                 .client_private_key_filename = if (config.tls_opts) |tls| tls.client_private_key_file else null,
