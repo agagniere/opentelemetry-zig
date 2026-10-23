@@ -280,6 +280,10 @@ pub const ConfigOptions = struct {
     // Tracks whether `endpoint` was allocated by us and must be freed on deinit.
     endpoint_owned: bool = false,
 
+    // The transport security that the scheme of `endpoint` selects, if it had one.
+    // Kept apart from `insecure`, which also applies to signal endpoints without a scheme.
+    endpoint_insecure: ?bool = null,
+
     const max_timeout_sec = 600;
 
     pub fn init(allocator: std.mem.Allocator, env_map: *const EnvMap) !*ConfigOptions {
@@ -370,7 +374,7 @@ pub const ConfigOptions = struct {
             // gRPC dials a bare host:port, so for it the scheme is the TLS
             // switch — and per spec it wins: the insecure setting applies only
             // to endpoints given without a scheme.
-            self.insecure = scheme != .https;
+            self.endpoint_insecure = scheme != .https;
         }
         const value = std.mem.trimEnd(u8, split.rest, "/");
         if (value.len == 0) return ConfigError.InvalidEndpoint;
@@ -420,7 +424,7 @@ pub const ConfigOptions = struct {
     // Returned memory is borrowed from self.
     fn grpcEndpointForSignal(self: ConfigOptions, signal: Signal) !GrpcEndpoint {
         const url = self.custom_signal_urls.get(signal) orelse
-            return .{ .endpoint = self.endpoint, .insecure = self.insecure };
+            return .{ .endpoint = self.endpoint, .insecure = self.endpoint_insecure orelse self.insecure };
         const split = try splitScheme(url);
         const endpoint = std.mem.trimEnd(u8, split.rest, "/");
         if (endpoint.len == 0) return ConfigError.InvalidEndpoint;
@@ -518,7 +522,9 @@ test "otlp config from env with URL scheme in endpoint" {
 
         try std.testing.expectEqualStrings(c.endpoint, config.endpoint);
         try std.testing.expect(config.scheme == c.scheme);
-        try std.testing.expectEqual(c.insecure, config.insecure);
+        try std.testing.expectEqual(c.insecure, (try config.grpcEndpointForSignal(c.signal)).insecure);
+        // Left for the signal endpoints without a scheme
+        try std.testing.expectEqual(@as(?bool, null), config.insecure);
 
         const url = try config.httpUrlForSignal(c.signal, allocator);
         defer allocator.free(url);
@@ -586,13 +592,21 @@ test "otlp config custom endpoint for signals over gRPC" {
     const traces = try config.grpcEndpointForSignal(.traces);
     try std.testing.expectEqualStrings("traces.example.com:4317", traces.endpoint);
     try std.testing.expectEqual(@as(?bool, false), traces.insecure);
-    // Without a scheme, the insecure setting applies.
+    // Without a scheme, the insecure setting applies, not the scheme of the endpoint it replaces.
     const metrics = try config.grpcEndpointForSignal(.metrics);
     try std.testing.expectEqualStrings("metrics:4317", metrics.endpoint);
-    try std.testing.expectEqual(config.insecure, metrics.insecure);
+    try std.testing.expectEqual(@as(?bool, null), metrics.insecure);
     const logs = try config.grpcEndpointForSignal(.logs);
     try std.testing.expectEqualStrings("collector:4317", logs.endpoint);
     try std.testing.expectEqual(@as(?bool, true), logs.insecure);
+
+    // Still unset with TLS files configured, so that they select SSL credentials.
+    config.tls_opts = .{ .certificate_file = "/some/ca.pem" };
+    try std.testing.expectEqual(@as(?bool, null), (try config.grpcEndpointForSignal(.metrics)).insecure);
+    config.insecure = false;
+    try std.testing.expectEqual(@as(?bool, false), (try config.grpcEndpointForSignal(.metrics)).insecure);
+    // While the scheme of an endpoint still wins over it.
+    try std.testing.expectEqual(@as(?bool, true), (try config.grpcEndpointForSignal(.logs)).insecure);
 
     try config.custom_signal_urls.put(allocator, .logs, try allocator.dupe(u8, "ftp://logs:4317"));
     try std.testing.expectError(ConfigError.InvalidScheme, config.grpcEndpointForSignal(.logs));
